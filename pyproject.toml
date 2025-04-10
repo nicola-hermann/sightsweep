@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"] # Need setuptools for building
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sightsweep"     # Distribution name (on PyPI, use hyphens)
+version = "0.1.0"               # Initial version
+description = "A minimal example Python package."
+readme = "README.md"           # Optional: Specify a README file (even if it doesn't exist yet)
+requires-python = ">=3.8"       # Specify compatible Python versions
+license = {text = "MIT"}        # Or { file = "LICENSE" } if you add a LICENSE file
+authors = [
+  {
+    name="Nicola Hermann", email="nicola.hermann@stud.hslu.ch",
+    name="Pascal Gansner", email="pascal.gansner@stud,hslu.ch",
+   },
+]
+classifiers = [                 
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+# Declare dependencies as dynamic - they will be read from elsewhere
+dynamic = ["dependencies"]
+
+# --- Setuptools Specific Configuration ---
+[tool.setuptools]
+# Tell setuptools where to find the package code (under the 'src' directory)
+package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+# Tell setuptools to get the list of dependencies from the specified file
+dependencies = {file = ["requirements.txt"]}
+
+[project.urls] # Optional: Links for PyPI
+"Homepage" = "https://github.com/nicola-hermann/sightsweep"
+
+
