@@ -10,10 +10,8 @@ readme = "README.md"           # Optional: Specify a README file (even if it doe
 requires-python = ">=3.8"       # Specify compatible Python versions
 license = {text = "MIT"}        # Or { file = "LICENSE" } if you add a LICENSE file
 authors = [
-  {
-    name="Nicola Hermann", email="nicola.hermann@stud.hslu.ch",
-    name="Pascal Gansner", email="pascal.gansner@stud,hslu.ch",
-   },
+  {name="Nicola Hermann", email="nicola.hermann@stud.hslu.ch"},
+  {name="Pascal Gansner", email="pascal.gansner@stud.hslu.ch"},
 ]
 classifiers = [                 
     "Programming Language :: Python :: 3",
