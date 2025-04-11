@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk, ImageDraw, ImageChops
+from PIL import Image, ImageTk, ImageDraw
 import os
 import numpy as np
 import torch
@@ -12,13 +12,13 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 MAX_DISPLAY_WIDTH = 1920  # Adjust as needed for your screen
 MAX_DISPLAY_HEIGHT = 1080  # Adjust as needed for your screen
 
-# --- SAM2 Configuration --- # <--- SAM2 Change
+# --- SAM2 Configuration --- #
 SAM_CHECKPOINT = r"sam2.1_hiera_base_plus.pt"
-MODEL_CFG = r"C:\Projects\HSLU\sightsweep\cfg\sam2.1_hiera_base_plus.yaml"  # Example: Corresponding model type key in the registry
+MODEL_CFG = r"C:\Projects\HSLU\sightsweep\cfg\sam2.1_hiera_base_plus.yaml"
 
 
-MASK_COLOR = (0, 0, 255, 128)  # Blue with 50% alpha (R, G, B, Alpha)
-POINT_RADIUS = 5  # Radius for drawing click markers
+MASK_COLOR = (0, 0, 255, 128)
+POINT_RADIUS = 5
 
 # --- Set Appearance Mode and Color Theme ---
 ctk.set_appearance_mode("dark")
@@ -42,7 +42,7 @@ class ImageClickerApp:
         self.display_height = 0
         self.scale_ratio = 1.0
 
-        # --- SAM2 Variables --- # <--- SAM2 Change
+        # --- SAM Initialization ---
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
         elif torch.backends.mps.is_available():
@@ -53,7 +53,6 @@ class ImageClickerApp:
         self.sam_model = build_sam2(MODEL_CFG, SAM_CHECKPOINT, self.device)
         self.sam_predictor = SAM2ImagePredictor(self.sam_model)
 
-        # SAM2 predictor likely handles embeddings internally after set_image
         self.positive_points = []
         self.negative_points = []
         self.current_mask_display = None
@@ -151,10 +150,8 @@ class ImageClickerApp:
         try:
             # --- Load Original Image ---
             self.pil_image_original = Image.open(self.filepath).convert("RGB")
-
-            # --- Prepare Image for SAM2 --- # <--- SAM2 Change
-            print("Setting image in SAM2 predictor...")
             image_np = np.array(self.pil_image_original)
+
             # Assuming Sam2Predictor has the same set_image method
             self.sam_predictor.set_image(image_np)
             print("Image features computed by SAM2.")
@@ -168,7 +165,7 @@ class ImageClickerApp:
         except Exception as e:
             messagebox.showerror(
                 "Error", f"Failed to load or process image with SAM2:\n{e}"
-            )  # <--- SAM2 Change (Message)
+            )
             self._reset_image_data()
 
     def _calculate_display_size(self):
@@ -188,8 +185,6 @@ class ImageClickerApp:
 
         self.display_width = int(original_width * self.scale_ratio)
         self.display_height = int(original_height * self.scale_ratio)
-
-        # print(f"Original: {original_width}x{original_height}, Canvas: {canvas_width}x{canvas_height}, Display: {self.display_width}x{self.display_height}, Ratio: {self.scale_ratio:.4f}")
 
     def _update_display_image(self):
         """Resizes original image, creates Tkinter PhotoImage for display."""
@@ -292,18 +287,12 @@ class ImageClickerApp:
         )
 
         try:
-            # --- Predict with SAM2 ---
-            # Assuming Sam2Predictor has a compatible predict method signature.
-            # Verify arguments (point_coords, point_labels, multimask_output)
-            # and return format (masks, scores, logits) from SAM2 documentation if issues arise.
             masks, scores, logits = self.sam_predictor.predict(
                 point_coords=input_points,
                 point_labels=input_labels,
                 multimask_output=False,  # Get single best mask
             )
 
-            # masks should be (num_masks, H, W) boolean numpy array.
-            # Since multimask_output=False, we expect (1, H, W)
             if masks.shape[0] == 0:
                 print("SAM2 did not return any masks.")
                 self.current_mask_display = None
@@ -332,10 +321,8 @@ class ImageClickerApp:
         except Exception as e:
             messagebox.showerror(
                 "SAM2 Prediction Error", f"Failed to run SAM2 prediction:\n{e}"
-            )  # <--- SAM2 Change (Message)
-            print(
-                f"Error during SAM2 prediction: {e}"
-            )  # Also print to console for debugging
+            )
+            print(f"Error during SAM2 prediction: {e}")
             self.current_mask_display = None
 
     def _draw_canvas_content(self):
@@ -415,8 +402,6 @@ class ImageClickerApp:
         self.display_width = 0
         self.display_height = 0
         self.scale_ratio = 1.0
-        # Clear SAM2 specific data for the image
-        # Predictor is kept, but internal image state is cleared on next set_image
         self.clear_clicks()
         self.lbl_filepath.configure(text="No image selected")
         self.lbl_coords.configure(text="Select Image")
@@ -435,8 +420,6 @@ if __name__ == "__main__":
         )
         print("https://github.com/facebookresearch/sam2")
         print("and update the SAM_CHECKPOINT variable in the script.")
-        # Optionally add a file dialog to ask for the checkpoint here if needed
-        # exit() # Exit if you want to force the user to fix the path
 
     root = ctk.CTk()
     app = ImageClickerApp(root)
