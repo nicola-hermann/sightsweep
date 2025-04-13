@@ -14,8 +14,7 @@ MAX_DISPLAY_HEIGHT = 1080  # Adjust as needed for your screen
 
 # --- SAM2 Configuration --- #
 SAM_CHECKPOINT = r"sam2.1_hiera_base_plus.pt"
-MODEL_CFG = r"C:\Projects\HSLU\sightsweep\cfg\sam2.1_hiera_base_plus.yaml"
-
+MODEL_CFG = r"configs/sam2.1/sam2.1_hiera_b+.yaml"
 
 MASK_COLOR = (0, 0, 255, 128)
 POINT_RADIUS = 5
