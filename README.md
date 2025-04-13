@@ -53,6 +53,9 @@ It's highly recommended to install `sightsweep` within a virtual environment.
         ```
         This links the installed package to your source code within the `.venv`, so changes are reflected without reinstalling.
 
+## Download SAM Model
+To download the SAM2 model, go to [this](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description) page and download the `sam2.1_hiera_base_plus.pt` checkpoint 
+
 ## Download Dataset
 For this project, we are using the google landmarks dataset from [here.](https://github.com/cvdfoundation/google-landmark/tree/master)
 
