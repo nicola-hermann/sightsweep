@@ -53,6 +53,21 @@ It's highly recommended to install `sightsweep` within a virtual environment.
         ```
         This links the installed package to your source code within the `.venv`, so changes are reflected without reinstalling.
 
+## Download Dataset
+For this project, we are using the google landmarks dataset from [here.](https://github.com/cvdfoundation/google-landmark/tree/master)
+
+To download it using a shell script, run the following commands in bash:
+
+```bash
+cd data
+mkdir train
+cd train
+bash ../download-dataset.sh train x # Replace x with the number of batches you want to download (Max 499)
+```
+
+Do the same thing for the index (validation) and test set
+
+
 ## Basic Usage
 
 *(Add your basic usage instructions here, assuming the virtual environment is active)*

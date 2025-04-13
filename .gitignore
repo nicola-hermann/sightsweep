@@ -174,3 +174,7 @@ cython_debug/
 .pypirc
 
 *.pt
+*/train
+*/val
+*/validation
+*/test
