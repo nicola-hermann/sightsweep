@@ -5,6 +5,7 @@ import cv2
 from copy import deepcopy
 import numpy as np
 import random
+import torch
 
 
 class SightSweepDataset(Dataset):
@@ -55,7 +56,7 @@ class SightSweepDataset(Dataset):
     def __len__(self):
         return len(self.data_paths)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Load the image
         img_path = self.data_paths[idx]
         image = cv2.imread(str(img_path))
@@ -67,12 +68,15 @@ class SightSweepDataset(Dataset):
         if self.augmentation_fn:
             image = self.augmentation_fn(image)
 
+        blob_img = torch.from_numpy(blob_img).permute(2, 0, 1)  # Convert to (C, H, W)
+        label = torch.from_numpy(label).permute(2, 0, 1)
+        mask = torch.from_numpy(mask)
         return blob_img, label, mask
 
 
 if __name__ == "__main__":
     # Example usage
-    dataset = SightSweepDataset(data_folder=Path(r"data\train"), augmentation_fn=None)
+    dataset = SightSweepDataset(data_folder=Path(r"D:\sightsweep\train"), augmentation_fn=None)
     print(f"Number of images in dataset: {len(dataset)}")
     blob_img, label, mask = dataset[0]
     # Display the first image and its label
