@@ -112,7 +112,7 @@ if __name__ == "__main__":
     x_hat = model(x)
     assert x_hat.shape == x.shape, f"Output shape {x_hat.shape} does not match input shape {x.shape}"
 
-    dataset = SightSweepDataset(data_folder=Path(r"D:\sightsweep\train"), augmentation_fn=None)
+    dataset = SightSweepDataset(data_folder=Path(r"data\train"), augmentation_fn=None)
     masked_image, y, mask = dataset[0]
     print(f"Masked image shape: {masked_image.shape}")
     print(f"Label shape: {y.shape}")

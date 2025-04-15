@@ -76,7 +76,7 @@ class SightSweepDataset(Dataset):
 
 if __name__ == "__main__":
     # Example usage
-    dataset = SightSweepDataset(data_folder=Path(r"D:\sightsweep\train"), augmentation_fn=None)
+    dataset = SightSweepDataset(data_folder=Path(r"data\train"), augmentation_fn=None)
     print(f"Number of images in dataset: {len(dataset)}")
     blob_img, label, mask = dataset[0]
     # Display the first image and its label
