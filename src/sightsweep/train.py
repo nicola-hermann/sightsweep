@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+import torch.optim as optim
 from sightsweep.conv_autoencoder import ConvAutoencoder
 from sightsweep.dataset import SightSweepDataset
 from pathlib import Path
@@ -20,7 +21,7 @@ def train(config=None):
 
     with wandb.init(config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"):
         config = wandb.config
-        wandb.run.name = f"{config["model_name"]}_{config["lr"]}_{config["weight_decay"]}"
+        wandb.run.name = f"{config['model_name']}_{config['lr']}_{config['weight_decay']}"
 
         # --- Dataset and DataLoader ---
         train_loader, val_loader = create_data_loaders(config["batch_size"])
@@ -82,12 +83,23 @@ def print_batch_size_mem_usage(config, batch_sizes: list):
     """Print the memory usage of the model for different batch sizes."""
     device = get_device()
     model = create_model(config).to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+    model.train()  # Set the model to training mode
     for batch_size in batch_sizes:
         x = torch.randn(batch_size, 3, 1024, 1024).to(device)  # (B, C, H, W)
         mask = torch.ones((batch_size, 1, x.shape[-2], x.shape[-1])).to(device)  # (B, C, H, W)
         mask[:, 0, 512:, 512:] = 0  # Set the bottom right corner to zero
         x_hat = model(x, mask)
-        mem = torch.cuda.memory_allocated(device) / (1024**2)
+
+        # Backpropagation
+        optimizer.zero_grad()
+        loss = model.masked_loss(x, x_hat, mask)
+        loss.backward()
+        optimizer.step()
+
+        # Print memory usage
+        torch.cuda.synchronize(device)
+        mem = torch.cuda.max_memory_allocated(device) / (1024**2)
         mem_total = torch.cuda.get_device_properties(device).total_memory / (1024**2)
         mem_percent = mem / mem_total * 100
         print(f"Batch size {batch_size}: {mem:.2f} MB / {mem_total:.2f} MB ({mem_percent:.2f}%)")
@@ -109,16 +121,16 @@ def create_model(config):
     if config["model_name"] == "conv_autoencoder":
         return ConvAutoencoder(config["lr"], config["weight_decay"])
     else:
-        raise ValueError(f"Unknown model name: {config["model_name"]}")
+        raise ValueError(f"Unknown model name: {config['model_name']}")
 
 
 if __name__ == "__main__":
     wandb.login()  # Login to Weights & Biases
     config = {
         "model_name": "conv_autoencoder",
-        "batch_size": 8,
+        "batch_size": 50,
         "lr": 0.001,
         "weight_decay": 0.0001,
     }
-    # print_batch_size_mem_usage(config, [16, 32, 64])  # Print memory usage for different batch sizes
+    # print_batch_size_mem_usage(config, [16, 32, 50, 55, 60, 64])  # Print memory usage for different batch sizes
     train(config)
