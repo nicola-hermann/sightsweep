@@ -2,34 +2,21 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageDraw
 import os
+from sightsweep.sam_predictor_module import SAM2Predictor
 import numpy as np
-import torch
-
-from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor
-
-# --- Constants ---
-MAX_DISPLAY_WIDTH = 1920  # Adjust as needed for your screen
-MAX_DISPLAY_HEIGHT = 1080  # Adjust as needed for your screen
-
-# --- SAM2 Configuration --- #
-SAM_CHECKPOINT = r"sam2.1_hiera_base_plus.pt"
-MODEL_CFG = r"configs/sam2.1/sam2.1_hiera_b+.yaml"
-
-MASK_COLOR = (0, 0, 255, 128)
-POINT_RADIUS = 5
-
-# --- Set Appearance Mode and Color Theme ---
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
 
 
 class ImageClickerApp:
-    def __init__(self, root: ctk.CTk):
+    def __init__(self, root: ctk.CTk, sam_predictor: SAM2Predictor, config: dict):
         self.root = root
-        self.root.title("SightSweep - SAM2 Segmentation")  # <--- SAM2 Change (Title)
-        self.root.geometry("1920x1080")
+        self.root.title("SightSweep - SAM2 Segmentation")
+        self.root.geometry(
+            f"{config.get('max_display_width', 1920)}x{config.get('max_display_height', 1080)}"
+        )
         self.root.minsize(600, 500)
+
+        self.sam_predictor = sam_predictor
+        self.config = config
 
         # --- Variables ---
         self.filepath = None
@@ -40,17 +27,6 @@ class ImageClickerApp:
         self.display_width = 0
         self.display_height = 0
         self.scale_ratio = 1.0
-
-        # --- SAM Initialization ---
-        if torch.cuda.is_available():
-            self.device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            self.device = torch.device("mps")
-        else:
-            self.device = torch.device("cpu")
-
-        self.sam_model = build_sam2(MODEL_CFG, SAM_CHECKPOINT, self.device)
-        self.sam_predictor = SAM2ImagePredictor(self.sam_model)
 
         self.positive_points = []
         self.negative_points = []
@@ -123,10 +99,10 @@ class ImageClickerApp:
 
     def select_image(self):
         """Opens dialog, loads image, prepares for display and SAM2."""
-        if not self.sam_predictor:
+        if not self.sam_predictor.predictor:
             messagebox.showwarning(
                 "SAM2 Not Ready", "SAM2 model is not loaded. Cannot process image."
-            )  # <--- SAM2 Change (Message)
+            )
             return
 
         filetypes = (
@@ -151,7 +127,6 @@ class ImageClickerApp:
             self.pil_image_original = Image.open(self.filepath).convert("RGB")
             image_np = np.array(self.pil_image_original)
 
-            # Assuming Sam2Predictor has the same set_image method
             self.sam_predictor.set_image(image_np)
             print("Image features computed by SAM2.")
 
@@ -223,7 +198,6 @@ class ImageClickerApp:
             old_w, old_h = self.display_width, self.display_height
             self._calculate_display_size()
             if old_w != self.display_width or old_h != self.display_height:
-                # print("Window resized, updating image display...")
                 self._update_display_image()
                 self._draw_canvas_content()
 
@@ -232,7 +206,7 @@ class ImageClickerApp:
         if (
             self.pil_image_original is None
             or self.pil_image_display is None
-            or not self.sam_predictor
+            or not self.sam_predictor.predictor  # Check if predictor is initialized
         ):
             self.lbl_coords.configure(text="Please select an image first.")
             return
@@ -259,64 +233,49 @@ class ImageClickerApp:
             )
             self.lbl_coords.configure(text=f"Added {point_type} point. Predicting...")
 
-            # --- Run SAM2 Prediction --- # <--- SAM2 Change
+            # --- Run SAM2 Prediction --- #
             self.run_sam2_prediction()
             self._draw_canvas_content()
+
+            # --- Run Inprint Model --- #
+            # TODO: Implement inprint model prediction here
 
         else:
             self.lbl_coords.configure(text="Clicked outside displayed image bounds")
 
-    def run_sam2_prediction(self):  # <--- SAM2 Change (Method name and content)
+    def run_sam2_prediction(self):
         """Runs SAM2 prediction based on current points."""
-        if not self.sam_predictor or (
+        if not self.sam_predictor.predictor or (
             not self.positive_points and not self.negative_points
         ):
             self.current_mask_display = None
             return
 
-        input_points = np.array(self.positive_points + self.negative_points)
-        # Ensure labels are integers (required by SAM/SAM2)
-        input_labels = np.array(
-            [1] * len(self.positive_points) + [0] * len(self.negative_points),
-            dtype=np.int32,
-        )
-
-        print(
-            f"Running SAM2 with {len(self.positive_points)} positive, {len(self.negative_points)} negative points."
-        )
-
         try:
             masks, scores, logits = self.sam_predictor.predict(
-                point_coords=input_points,
-                point_labels=input_labels,
-                multimask_output=False,  # Get single best mask
+                self.positive_points, self.negative_points
             )
 
-            if masks.shape[0] == 0:
+            if masks is not None and masks.shape[0] > 0:
+                mask_original_np = masks[0].astype(bool)
+                mask_color = tuple(self.config.get("mask_color", [0, 0, 255, 128]))
+                self.current_mask_display = self.sam_predictor.create_mask_image(
+                    mask_original_np, mask_color
+                )
+                best_score = scores[0] if len(scores) > 0 else -1
+                self.lbl_coords.configure(
+                    text=f"Prediction done. Score: {best_score:.3f}"
+                )
+                print(f"Prediction score: {best_score:.3f}")
+            else:
                 print("SAM2 did not return any masks.")
                 self.current_mask_display = None
                 self.lbl_coords.configure(text="Prediction done. No mask found.")
-                return
 
-            mask_original_np = masks[0].astype(bool)  # Ensure it's boolean
-
-            # --- Create visual mask for display ---
-            h, w = mask_original_np.shape
-            mask_color_image = np.zeros((h, w, 4), dtype=np.uint8)
-            mask_color_image[mask_original_np] = MASK_COLOR
-
-            mask_pil_original = Image.fromarray(mask_color_image, "RGBA")
-
-            self.current_mask_display = mask_pil_original.resize(
-                (self.display_width, self.display_height), Image.Resampling.NEAREST
-            )
-
-            best_score = (
-                scores[0] if len(scores) > 0 else -1
-            )  # Handle cases where scores might be empty
-            self.lbl_coords.configure(text=f"Prediction done. Score: {best_score:.3f}")
-            print(f"Prediction score: {best_score:.3f}")
-
+        except RuntimeError as e:
+            messagebox.showerror("SAM2 Error", f"Error during SAM2 prediction:\n{e}")
+            print(f"RuntimeError during SAM2 prediction: {e}")
+            self.current_mask_display = None
         except Exception as e:
             messagebox.showerror(
                 "SAM2 Prediction Error", f"Failed to run SAM2 prediction:\n{e}"
@@ -330,46 +289,51 @@ class ImageClickerApp:
             self.canvas.delete("all")
             return
 
+        # Base image for display (already resized)
         combined_image = self.pil_image_display.copy().convert("RGBA")
 
         if self.current_mask_display:
             try:
-                mask_rgba = self.current_mask_display.convert("RGBA")
-                if mask_rgba.size == combined_image.size:
-                    combined_image = Image.alpha_composite(combined_image, mask_rgba)
+                # Convert the original-sized mask to RGBA
+                mask_original_rgba = self.current_mask_display.convert("RGBA")
+
+                mask_display_rgba = mask_original_rgba.resize(
+                    (self.display_width, self.display_height), Image.Resampling.NEAREST
+                )
+
+                if mask_display_rgba.size == combined_image.size:
+                    combined_image = Image.alpha_composite(
+                        combined_image, mask_display_rgba
+                    )
                 else:
                     print(
-                        f"Warning: Mask size mismatch ({mask_rgba.size} vs {combined_image.size}), skipping overlay."
+                        f"Warning: Resized mask size mismatch ({mask_display_rgba.size} vs {combined_image.size}), skipping overlay."
                     )
             except Exception as e:
-                print(f"Error blending mask: {e}")
+                print(f"Error resizing or blending mask: {e}")
 
         draw = ImageDraw.Draw(combined_image)
+        point_radius = self.config.get("point_radius", 5)
+        # Draw positive points
         for ox, oy in self.positive_points:
             dx, dy = int(ox * self.scale_ratio), int(oy * self.scale_ratio)
-            draw.ellipse(
-                (
-                    dx - POINT_RADIUS,
-                    dy - POINT_RADIUS,
-                    dx + POINT_RADIUS,
-                    dy + POINT_RADIUS,
-                ),
-                fill="green",
-                outline="white",
+            bbox = (
+                dx - point_radius,
+                dy - point_radius,
+                dx + point_radius,
+                dy + point_radius,
             )
+            draw.ellipse(bbox, fill="green", outline="white")
+        # Draw negative points
         for ox, oy in self.negative_points:
             dx, dy = int(ox * self.scale_ratio), int(oy * self.scale_ratio)
-            draw.ellipse(
-                (
-                    dx - POINT_RADIUS,
-                    dy - POINT_RADIUS,
-                    dx + POINT_RADIUS,
-                    dy + POINT_RADIUS,
-                ),
-                fill="red",
-                outline="white",
+            bbox = (
+                dx - point_radius,
+                dy - point_radius,
+                dx + point_radius,
+                dy + point_radius,
             )
-
+            draw.ellipse(bbox, fill="red", outline="white")
         try:
             self.tk_image_overlay = ImageTk.PhotoImage(combined_image)
             self.canvas.delete("all")
@@ -407,19 +371,3 @@ class ImageClickerApp:
         self.canvas.delete("all")
         self.canvas.config(width=100, height=100)
         self.btn_clear_clicks.configure(state="disabled")
-
-
-# --- Main Execution ---
-if __name__ == "__main__":
-    # Check for SAM2 checkpoint existence at startup
-    if not os.path.exists(SAM_CHECKPOINT):
-        print(f"ERROR: SAM2 Checkpoint not found at: {SAM_CHECKPOINT}")
-        print(
-            "Please download a checkpoint (e.g., sam2_hiera_tiny.pt) from the SAM2 repository:"
-        )
-        print("https://github.com/facebookresearch/sam2")
-        print("and update the SAM_CHECKPOINT variable in the script.")
-
-    root = ctk.CTk()
-    app = ImageClickerApp(root)
-    root.mainloop()
