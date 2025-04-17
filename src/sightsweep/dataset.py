@@ -15,12 +15,14 @@ class SightSweepDataset(Dataset):
         augmentation_fn: Callable = None,
         min_blobs: int = 1,
         max_blobs: int = 4,
+        max_img_dim: int = 800,
     ):
         self.data_folder = data_folder
         self.augmentation_fn = augmentation_fn
         self.data_paths = self.get_data_paths()
         self.min_blobs = min_blobs
         self.max_blobs = max_blobs
+        self.max_img_dim = max_img_dim
 
     def get_data_paths(self):
         # Glob for all jpg files in the data folder
@@ -53,6 +55,24 @@ class SightSweepDataset(Dataset):
 
         return masked_image, mask
 
+    def pad_to_dim(self, image: np.ndarray) -> np.ndarray:
+        height, width = image.shape[:2]
+        pad_h = max(0, self.max_img_dim - height)
+        pad_w = max(0, self.max_img_dim - width)
+        top = pad_h // 2
+        bottom = pad_h - top
+        left = pad_w // 2
+        right = pad_w - left
+        return cv2.copyMakeBorder(
+            image,
+            top,
+            bottom,
+            left,
+            right,
+            cv2.BORDER_CONSTANT,
+            value=(255, 255, 255),
+        )
+
     def __len__(self):
         return len(self.data_paths)
 
@@ -60,32 +80,33 @@ class SightSweepDataset(Dataset):
         # Load the image
         img_path = self.data_paths[idx]
         image = cv2.imread(str(img_path))
-        label = deepcopy(image)
 
+        # Resize the image if it exceeds the max dimensions
+        height, width = image.shape[:2]
+        if height > self.max_img_dim or width > self.max_img_dim:
+            scale = min(self.max_img_dim / height, self.max_img_dim / width)
+            new_size = (int(width * scale), int(height * scale))
+            image = cv2.resize(image, new_size, interpolation=cv2.INTER_LINEAR)
+
+        label = deepcopy(image)
         blob_img, mask = self.apply_random_mask(image)
 
         # Apply augmentation if provided
         if self.augmentation_fn:
             image = self.augmentation_fn(image)
 
-        # Add padding to match 1024x1024 with white color
-        def pad_to_1024(image: np.ndarray) -> np.ndarray:
-            height, width = image.shape[:2]
-            pad_h = max(0, 1024 - height)
-            pad_w = max(0, 1024 - width)
-            top = pad_h // 2
-            bottom = pad_h - top
-            left = pad_w // 2
-            right = pad_w - left
-            return cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+        # Add padding to match 800x800 with white color
+        blob_img = self.pad_to_dim(blob_img)
+        label = self.pad_to_dim(label)
+        mask = self.pad_to_dim(mask)
 
-        blob_img = pad_to_1024(blob_img)
-        label = pad_to_1024(label)
-        mask = pad_to_1024(mask)
-
-        blob_img = torch.from_numpy(blob_img).permute(2, 0, 1).float() / 255.0  # Convert to (C, H, W) and normalize
+        blob_img = (
+            torch.from_numpy(blob_img).permute(2, 0, 1).float() / 255.0
+        )  # Convert to (C, H, W) and normalize
         label = torch.from_numpy(label).permute(2, 0, 1).float() / 255.0  # Normalize
-        mask = torch.from_numpy(mask).unsqueeze(0).float() / 255.0  # Convert to (1, H, W) and normalize
+        mask = (
+            torch.from_numpy(mask).unsqueeze(0).float() / 255.0
+        )  # Convert to (1, H, W) and normalize
         return blob_img, label, mask
 
 
@@ -99,6 +120,8 @@ if __name__ == "__main__":
     blob_img = blob_img.permute(1, 2, 0).numpy()  # Convert (C, H, W) to (H, W, C)
     label = label.permute(1, 2, 0).numpy()  # Convert (C, H, W) to (H, W, C)
     mask = mask.squeeze(0).numpy()  # Convert (1, H, W) to (H, W)
+
+    print("Blob Image Shape:", blob_img.shape)
 
     # Display the first image and its label
     cv2.imshow("Image", blob_img)
