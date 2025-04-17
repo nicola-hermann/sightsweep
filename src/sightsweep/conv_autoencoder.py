@@ -100,6 +100,7 @@ class ConvAutoencoder(pl.LightningModule):
         }
 
     def masked_loss(self, x, x_hat, mask):
+        mask = mask.expand_as(x)  # (B, 1, H, W) -> (B, 3, H, W)
         return 0.9 * F.l1_loss(x_hat[mask == 0], x[mask == 0]) + 0.1 * F.mse_loss(x_hat[mask == 0], x[mask == 0])
 
 
@@ -127,4 +128,6 @@ if __name__ == "__main__":
     mask = mask.unsqueeze(0).to(device="cuda")  # (B, 1, H, W)
     masked_image = masked_image.unsqueeze(0).to(device="cuda")  # (B, C, H, W)
     x_hat = model(masked_image, mask)
-    assert x_hat.shape == masked_image.shape, f"Output shape {x_hat.shape} does not match input shape {masked_image.shape}"
+    assert (
+        x_hat.shape == masked_image.shape
+    ), f"Output shape {x_hat.shape} does not match input shape {masked_image.shape}"
