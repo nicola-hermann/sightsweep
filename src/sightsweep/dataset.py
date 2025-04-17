@@ -16,6 +16,7 @@ class SightSweepDataset(Dataset):
         min_blobs: int = 1,
         max_blobs: int = 4,
         max_img_dim: int = 800,
+        max_length: int = None,
     ):
         self.data_folder = data_folder
         self.augmentation_fn = augmentation_fn
@@ -23,6 +24,7 @@ class SightSweepDataset(Dataset):
         self.min_blobs = min_blobs
         self.max_blobs = max_blobs
         self.max_img_dim = max_img_dim
+        self.max_length = max_length
 
     def get_data_paths(self):
         # Glob for all jpg files in the data folder
@@ -74,7 +76,7 @@ class SightSweepDataset(Dataset):
         )
 
     def __len__(self):
-        return len(self.data_paths)
+        return len(self.data_paths) if self.max_length is None else min(len(self.data_paths), self.max_length)
 
     def __getitem__(self, idx) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Load the image
