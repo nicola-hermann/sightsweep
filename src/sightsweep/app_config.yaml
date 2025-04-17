@@ -1,0 +1,11 @@
+# Constants
+max_display_width: 1920
+max_display_height: 1080
+
+# Sam2.1 Configuration
+sam_checkpoint: "sam2.1_hiera_base_plus.pt"
+model_cfg: "configs/sam2.1/sam2.1_hiera_b+.yaml"
+
+# Canvas Configuration
+mask_color: [0, 0, 255, 128]
+point_radius: 5
