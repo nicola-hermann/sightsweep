@@ -61,14 +61,15 @@ class ConvAutoencoder(pl.LightningModule):
         x_masked, label, mask = batch
         x_hat = self(x_masked, mask)
         loss = self.masked_loss(label, x_hat, mask)
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x_masked, label, mask = batch
         x_hat = self(x_masked, mask)
         loss = self.masked_loss(label, x_hat, mask)
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar=True)
+        return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

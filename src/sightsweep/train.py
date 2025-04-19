@@ -47,10 +47,11 @@ def train(config=None):
         # --- Trainer ---
         trainer = Trainer(
             max_epochs=100,
-            accelerator="gpu",
+            accelerator="auto",
             devices=1,
             logger=logger,
             callbacks=[checkpoint_callback, early_stopping_callback],
+            # profiler="simple",
         )
 
         # --- Training ---
@@ -111,8 +112,22 @@ def create_data_loaders(batch_size):
     train_dataset = SightSweepDataset(data_folder=Path(r"data/train"), augmentation_fn=None)
     val_dataset = SightSweepDataset(data_folder=Path(r"data/validation"), augmentation_fn=None)
 
-    train_loader = DataLoader(train_dataset, batch_size, shuffle=True, num_workers=6, persistent_workers=True)
-    val_loader = DataLoader(val_dataset, batch_size, shuffle=False, num_workers=6, persistent_workers=True)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=True,
+        persistent_workers=True,
+    )
 
     return train_loader, val_loader
 
@@ -128,7 +143,7 @@ if __name__ == "__main__":
     wandb.login()  # Login to Weights & Biases
     config = {
         "model_name": "conv_autoencoder",
-        "batch_size": 50,
+        "batch_size": 60,
         "lr": 0.001,
         "weight_decay": 0.0001,
     }
