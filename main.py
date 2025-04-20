@@ -31,10 +31,19 @@ if __name__ == "__main__":
         )
         print("https://github.com/facebookresearch/sam2")
         print("and update the sam_checkpoint key in config.yaml.")
-    else:
-        sam_predictor = SAM2Predictor(config)
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-        root = ctk.CTk()
-        app = ImageClickerApp(root, sam_predictor, config)
-        root.mainloop()
+    
+    inpainting_checkpoint = config.get("inpainting_checkpoint")
+    inpainting_model = config.get("inpainting_model")
+
+
+    sam_predictor = SAM2Predictor(config)
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("blue")
+    root = ctk.CTk()
+
+
+
+
+
+    app = ImageClickerApp(root, sam_predictor, config)
+    root.mainloop()
