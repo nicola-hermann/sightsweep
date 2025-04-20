@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk, ImageDraw, ImageOps
 import os
 from sightsweep.sam_predictor_module import SAM2Predictor
 import numpy as np
@@ -10,9 +10,7 @@ class ImageClickerApp:
     def __init__(self, root: ctk.CTk, sam_predictor: SAM2Predictor, config: dict):
         self.root = root
         self.root.title("SightSweep - SAM2 Segmentation")
-        self.root.geometry(
-            f"{config.get('max_display_width', 1920)}x{config.get('max_display_height', 1080)}"
-        )
+        self.root.geometry(f"{config.get('max_display_width', 1920)}x{config.get('max_display_height', 1080)}")
         self.root.minsize(600, 500)
 
         self.sam_predictor = sam_predictor
@@ -22,8 +20,10 @@ class ImageClickerApp:
         self.filepath = None
         self.pil_image_original = None
         self.pil_image_display = None
+        self.pil_inpainting_display = None
         self.tk_image_display = None
         self.tk_image_overlay = None
+        self.tk_inpainting_display = None
         self.display_width = 0
         self.display_height = 0
         self.scale_ratio = 1.0
@@ -62,23 +62,18 @@ class ImageClickerApp:
         )
         self.btn_clear_clicks.grid(row=0, column=1, padx=5, pady=10)
 
-        self.lbl_filepath = ctk.CTkLabel(
-            self.controls_frame, text="No image selected", anchor="w", wraplength=600
-        )
+        self.lbl_filepath = ctk.CTkLabel(self.controls_frame, text="No image selected", anchor="w", wraplength=600)
         self.lbl_filepath.grid(row=0, column=2, sticky="ew", padx=5, pady=10)
 
-        # --- Display Frame ---
+        # --- Display Frame Original ---
         self.display_frame = ctk.CTkFrame(root)
         self.display_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(5, 10))
-        self.display_frame.grid_columnconfigure(0, weight=1)
         self.display_frame.grid_rowconfigure(0, weight=1)
+        self.display_frame.grid_columnconfigure(0, weight=1)
+        self.display_frame.grid_columnconfigure(1, weight=1)
 
         frame_bg_color = root.cget("fg_color")
-        canvas_bg = (
-            frame_bg_color[1]
-            if isinstance(frame_bg_color, (list, tuple))
-            else frame_bg_color
-        )
+        canvas_bg = frame_bg_color[1] if isinstance(frame_bg_color, (list, tuple)) else frame_bg_color
         self.canvas = ctk.CTkCanvas(
             self.display_frame,
             bg=canvas_bg,
@@ -97,36 +92,44 @@ class ImageClickerApp:
         )
         self.lbl_coords.grid(row=1, column=0, sticky="ew", padx=5, pady=(0, 5))
 
+        # --- Display Frame Inpainting --- #
+        self.canvas_inpainting = ctk.CTkCanvas(
+            self.display_frame,
+            bg=canvas_bg,
+            cursor="arrow",
+            highlightthickness=0,
+        )
+        self.canvas_inpainting.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+
     def select_image(self):
         """Opens dialog, loads image, prepares for display and SAM2."""
         if not self.sam_predictor.predictor:
-            messagebox.showwarning(
-                "SAM2 Not Ready", "SAM2 model is not loaded. Cannot process image."
-            )
+            messagebox.showwarning("SAM2 Not Ready", "SAM2 model is not loaded. Cannot process image.")
             return
 
         filetypes = (
             ("Image files", "*.jpg *.jpeg *.png *.gif *.bmp *.tiff"),
             ("All files", "*.*"),
         )
-        filepath = filedialog.askopenfilename(
-            title="Select an Image", filetypes=filetypes
-        )
+        filepath = filedialog.askopenfilename(title="Select an Image", filetypes=filetypes)
         if not filepath:
             return
 
         self._reset_image_data()
         self.filepath = filepath
         self.lbl_filepath.configure(text=os.path.basename(filepath))
-        self.lbl_coords.configure(
-            text="Left-click: Add Point | Right-click: Remove Area"
-        )
+        self.lbl_coords.configure(text="Left-click: Add Point | Right-click: Remove Area")
 
         try:
             # --- Load Original Image ---
             self.pil_image_original = Image.open(self.filepath).convert("RGB")
             image_np = np.array(self.pil_image_original)
 
+            # --- handle rotation ---
+            self.pil_image_original = ImageOps.exif_transpose(self.pil_image_original)
+            image_np = np.array(self.pil_image_original)
+
+            # --- SAM2 ---
             self.sam_predictor.set_image(image_np)
             print("Image features computed by SAM2.")
 
@@ -134,12 +137,13 @@ class ImageClickerApp:
             self._calculate_display_size()
             self._update_display_image()
 
+            # --- Initialize Inpainting Display ---
+            self._update_display_inpainting()
+
             self.btn_clear_clicks.configure(state="normal")
 
         except Exception as e:
-            messagebox.showerror(
-                "Error", f"Failed to load or process image with SAM2:\n{e}"
-            )
+            messagebox.showerror("Error", f"Failed to load or process image with SAM2:\n{e}")
             self._reset_image_data()
 
     def _calculate_display_size(self):
@@ -148,7 +152,14 @@ class ImageClickerApp:
             return
 
         original_width, original_height = self.pil_image_original.size
-        canvas_width = self.display_frame.winfo_width() - 10
+
+        rotated = False
+        # Check if the image is rotated (e.g., width > height after rotation)
+        if original_width > original_height:
+            rotated = True
+            original_width, original_height = original_height, original_width
+
+        canvas_width = 0.5 * self.display_frame.winfo_width() - 10
         canvas_height = self.display_frame.winfo_height() - 10
         canvas_width = max(canvas_width, 100)
         canvas_height = max(canvas_height, 100)
@@ -160,13 +171,12 @@ class ImageClickerApp:
         self.display_width = int(original_width * self.scale_ratio)
         self.display_height = int(original_height * self.scale_ratio)
 
+        if rotated:
+            self.display_width, self.display_height = self.display_height, self.display_width
+
     def _update_display_image(self):
         """Resizes original image, creates Tkinter PhotoImage for display."""
-        if (
-            self.pil_image_original is None
-            or self.display_width <= 0
-            or self.display_height <= 0
-        ):
+        if self.pil_image_original is None or self.display_width <= 0 or self.display_height <= 0:
             self.canvas.delete("all")
             self.pil_image_display = None
             self.tk_image_display = None
@@ -183,18 +193,31 @@ class ImageClickerApp:
             self._draw_canvas_content()
         except Exception as e:
             print(f"Error updating display image: {e}")
-            messagebox.showerror(
-                "Display Error", f"Could not resize or display image:\n{e}"
-            )
+            messagebox.showerror("Display Error", f"Could not resize or display image:\n{e}")
+            self._reset_image_data()
+
+    def _update_display_inpainting(self):
+        """Updates the inpainting display canvas."""
+        if self.pil_inpainting_display is None or self.display_width <= 0 or self.display_height <= 0:
+            self.canvas_inpainting.delete("all")
+            self.pil_inpainting_display = None
+            self.tk_inpainting_display = None
+            return
+
+        try:
+            self.tk_inpainting_display = ImageTk.PhotoImage(self.pil_inpainting_display)
+            self.canvas_inpainting.config(width=self.display_width, height=self.display_height)
+            self.canvas_inpainting.delete("all")
+            self.canvas_inpainting.create_image(0, 0, anchor="nw", image=self.tk_inpainting_display)
+            self.canvas_inpainting.image = self.tk_inpainting_display  # Keep reference
+        except Exception as e:
+            print(f"Error updating inpainting display: {e}")
+            messagebox.showerror("Inpainting Display Error", f"Could not update inpainting display:\n{e}")
             self._reset_image_data()
 
     def on_window_resize(self, event=None):
         """Handle window resize event to recalculate display size and update."""
-        if (
-            self.pil_image_original
-            and self.display_frame.winfo_width() > 1
-            and self.display_frame.winfo_height() > 1
-        ):
+        if self.pil_image_original and self.display_frame.winfo_width() > 1 and self.display_frame.winfo_height() > 1:
             old_w, old_h = self.display_width, self.display_height
             self._calculate_display_size()
             if old_w != self.display_width or old_h != self.display_height:
@@ -228,9 +251,7 @@ class ImageClickerApp:
             else:
                 self.negative_points.append((original_x, original_y))
 
-            print(
-                f"{point_type} click: Display=({display_x}, {display_y}), Original=({original_x}, {original_y})"
-            )
+            print(f"{point_type} click: Display=({display_x}, {display_y}), Original=({original_x}, {original_y})")
             self.lbl_coords.configure(text=f"Added {point_type} point. Predicting...")
 
             # --- Run SAM2 Prediction --- #
@@ -238,34 +259,30 @@ class ImageClickerApp:
             self._draw_canvas_content()
 
             # --- Run Inprint Model --- #
-            # TODO: Implement inprint model prediction here
+            self.run_inpainting()
+            self._update_display_inpainting()
 
         else:
             self.lbl_coords.configure(text="Clicked outside displayed image bounds")
 
+    def run_inpainting(self):
+        pass
+
     def run_sam2_prediction(self):
         """Runs SAM2 prediction based on current points."""
-        if not self.sam_predictor.predictor or (
-            not self.positive_points and not self.negative_points
-        ):
+        if not self.sam_predictor.predictor or (not self.positive_points and not self.negative_points):
             self.current_mask_display = None
             return
 
         try:
-            masks, scores, logits = self.sam_predictor.predict(
-                self.positive_points, self.negative_points
-            )
+            masks, scores, logits = self.sam_predictor.predict(self.positive_points, self.negative_points)
 
             if masks is not None and masks.shape[0] > 0:
                 mask_original_np = masks[0].astype(bool)
                 mask_color = tuple(self.config.get("mask_color", [0, 0, 255, 128]))
-                self.current_mask_display = self.sam_predictor.create_mask_image(
-                    mask_original_np, mask_color
-                )
+                self.current_mask_display = self.sam_predictor.create_mask_image(mask_original_np, mask_color)
                 best_score = scores[0] if len(scores) > 0 else -1
-                self.lbl_coords.configure(
-                    text=f"Prediction done. Score: {best_score:.3f}"
-                )
+                self.lbl_coords.configure(text=f"Prediction done. Score: {best_score:.3f}")
                 print(f"Prediction score: {best_score:.3f}")
             else:
                 print("SAM2 did not return any masks.")
@@ -277,9 +294,7 @@ class ImageClickerApp:
             print(f"RuntimeError during SAM2 prediction: {e}")
             self.current_mask_display = None
         except Exception as e:
-            messagebox.showerror(
-                "SAM2 Prediction Error", f"Failed to run SAM2 prediction:\n{e}"
-            )
+            messagebox.showerror("SAM2 Prediction Error", f"Failed to run SAM2 prediction:\n{e}")
             print(f"Error during SAM2 prediction: {e}")
             self.current_mask_display = None
 
@@ -302,9 +317,7 @@ class ImageClickerApp:
                 )
 
                 if mask_display_rgba.size == combined_image.size:
-                    combined_image = Image.alpha_composite(
-                        combined_image, mask_display_rgba
-                    )
+                    combined_image = Image.alpha_composite(combined_image, mask_display_rgba)
                 else:
                     print(
                         f"Warning: Resized mask size mismatch ({mask_display_rgba.size} vs {combined_image.size}), skipping overlay."
@@ -357,17 +370,20 @@ class ImageClickerApp:
     def _reset_image_data(self):
         """Helper method to clear all image-related variables."""
         print("Resetting image data.")
+        self.clear_clicks()
         self.filepath = None
         self.pil_image_original = None
         self.pil_image_display = None
+        self.pil_inpainting_display = None
         self.tk_image_display = None
         self.tk_image_overlay = None
+        self.tk_inpainting_display = None
         self.display_width = 0
         self.display_height = 0
         self.scale_ratio = 1.0
-        self.clear_clicks()
         self.lbl_filepath.configure(text="No image selected")
         self.lbl_coords.configure(text="Select Image")
         self.canvas.delete("all")
         self.canvas.config(width=100, height=100)
+        self.canvas_inpainting.delete("all")  # Clear the inpainting canvas
         self.btn_clear_clicks.configure(state="disabled")
