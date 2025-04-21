@@ -2,24 +2,30 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 import os
+from torchvision import transforms
 from sightsweep.sam_predictor_module import SAM2Predictor
+from sightsweep.inpainting_module import Inpainting
 import numpy as np
 
 
 class ImageClickerApp:
-    def __init__(self, root: ctk.CTk, sam_predictor: SAM2Predictor, config: dict):
+    def __init__(self, root: ctk.CTk, sam_predictor: SAM2Predictor, inpainting: Inpainting, config: dict):
         self.root = root
         self.root.title("SightSweep - SAM2 Segmentation")
         self.root.geometry(f"{config.get('max_display_width', 1920)}x{config.get('max_display_height', 1080)}")
         self.root.minsize(600, 500)
 
         self.sam_predictor = sam_predictor
+        self.inpainting = inpainting
         self.config = config
+        self.to_tensor = transforms.ToTensor()
+        self.to_pil = transforms.ToPILImage()
 
         # --- Variables ---
         self.filepath = None
         self.pil_image_original = None
         self.pil_image_display = None
+        self.pil_inpainting_original = None
         self.pil_inpainting_display = None
         self.tk_image_display = None
         self.tk_image_overlay = None
@@ -198,13 +204,16 @@ class ImageClickerApp:
 
     def _update_display_inpainting(self):
         """Updates the inpainting display canvas."""
-        if self.pil_inpainting_display is None or self.display_width <= 0 or self.display_height <= 0:
+        if self.pil_inpainting_original is None or self.display_width <= 0 or self.display_height <= 0:
             self.canvas_inpainting.delete("all")
             self.pil_inpainting_display = None
             self.tk_inpainting_display = None
             return
 
         try:
+            self.pil_inpainting_display = self.pil_inpainting_original.resize(
+                (self.display_width, self.display_height), Image.Resampling.LANCZOS
+            )
             self.tk_inpainting_display = ImageTk.PhotoImage(self.pil_inpainting_display)
             self.canvas_inpainting.config(width=self.display_width, height=self.display_height)
             self.canvas_inpainting.delete("all")
@@ -266,7 +275,17 @@ class ImageClickerApp:
             self.lbl_coords.configure(text="Clicked outside displayed image bounds")
 
     def run_inpainting(self):
-        pass
+        """Runs inpainting based on the current mask."""
+        if not self.pil_image_original or not self.current_mask_display:
+            return
+
+        try:
+            self.pil_inpainting_original = self.inpainting.inpaint(self.pil_image_original.copy(), self.current_mask_display.copy())
+            print("Inpainting done.")
+
+        except Exception as e:
+            messagebox.showerror("Inpainting Error", f"Error during inpainting:\n{e}")
+            print(f"Error during inpainting: {e}")
 
     def run_sam2_prediction(self):
         """Runs SAM2 prediction based on current points."""
