@@ -3,6 +3,7 @@ import os
 import yaml
 from sightsweep.ui import ImageClickerApp
 from sightsweep.sam_predictor_module import SAM2Predictor
+from sightsweep.inpainting_module import Inpainting
 
 
 # --- Load Configuration ---
@@ -26,24 +27,17 @@ if __name__ == "__main__":
     sam_checkpoint = config.get("sam_checkpoint")
     if not os.path.exists(sam_checkpoint):
         print(f"ERROR: SAM2 Checkpoint not found at: {sam_checkpoint}")
-        print(
-            "Please download a checkpoint (e.g., sam2_hiera_tiny.pt) from the SAM2 repository:"
-        )
+        print("Please download a checkpoint (e.g., sam2_hiera_tiny.pt) from the SAM2 repository:")
         print("https://github.com/facebookresearch/sam2")
         print("and update the sam_checkpoint key in config.yaml.")
-    
+
     inpainting_checkpoint = config.get("inpainting_checkpoint")
     inpainting_model = config.get("inpainting_model")
 
-
     sam_predictor = SAM2Predictor(config)
+    inpainting = Inpainting(config)
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
     root = ctk.CTk()
-
-
-
-
-
-    app = ImageClickerApp(root, sam_predictor, config)
+    app = ImageClickerApp(root, sam_predictor, inpainting, config)
     root.mainloop()

@@ -12,4 +12,5 @@ point_radius: 5
 
 # Inpainting Configuration
 inpaint_model: "conv_autoencoder"
-inpainting_checkpoint: "checkpoints/conv_autoencoder-epoch=05-val_loss=0.08.ckpt"
+inpaint_checkpoint: "checkpoints/conv_autoencoder-epoch=05-val_loss=0.08.ckpt"
+img_dim: 800
