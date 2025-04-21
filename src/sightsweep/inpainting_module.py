@@ -1,6 +1,10 @@
 import os
+import numpy as np
 import torch
 from sightsweep.conv_autoencoder import ConvAutoencoder
+from PIL import Image
+from torchvision import transforms
+import torchvision.transforms.functional as TF
 
 
 class Inpainting:
@@ -15,8 +19,8 @@ class Inpainting:
         else:
             self.device = torch.device(device)
 
-        model_name = config.get("inpainting_model")
-        checkpoint_path = config.get("inpainting_checkpoint")
+        model_name = config.get("inpaint_model")
+        checkpoint_path = config.get("inpaint_checkpoint")
         if not model_name or not checkpoint_path:
             raise ValueError("Inpainting model or checkpoint not found in config.")
         if not os.path.exists(checkpoint_path):
@@ -24,6 +28,9 @@ class Inpainting:
 
         self.model = self.load_model(model_name, checkpoint_path)
         self.model.to(self.device)
+        self.to_tensor = transforms.ToTensor()
+        self.to_pil = transforms.ToPILImage()
+        self.img_dim = config.get("img_dim", 800)
 
     def load_model(self, model_name, checkpoint_path):
         if model_name == "conv_autoencoder":
@@ -33,13 +40,33 @@ class Inpainting:
 
         raise ValueError(f"Model {model_name} not supported.")
 
-    def inpaint(self, image: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        # Move the image and mask to the device
-        image = image.to(self.device)
-        mask = mask.to(self.device)
+    def inpaint(self, image: Image, mask: Image) -> Image:
+        original_size = image.size
+        image = image.convert("RGB")
+        mask = mask.convert("L")
+        mask = mask.point(lambda p: 0 if p > 0 else 255, mode="1") # Convert to binary mask
+        if max(image.size) > self.img_dim:
+            image.thumbnail((self.img_dim, self.img_dim))
+            mask.thumbnail((self.img_dim, self.img_dim))
+
+        image_tensor = self.to_tensor(image).to(self.device)
+        mask_tensor = self.to_tensor(mask).to(self.device)
+
+        [_, height, width] = image_tensor.shape
+        pad_h = max(0, self.img_dim - height)
+        pad_w = max(0, self.img_dim - width)
+        padding = [pad_w // 2, pad_h // 2, pad_w - pad_w // 2, pad_h - pad_h // 2]  # [left, top, right, bottom]
+        image_tensor = TF.pad(image_tensor, padding, fill=1)  # Fill with white (1 for normalized images)
+        mask_tensor = TF.pad(mask_tensor, padding, fill=1)
 
         # Perform inpainting
         with torch.no_grad():
-            inpainted_image = self.model(image, mask)
+            inpainted_image = self.model(image_tensor.unsqueeze(0), mask_tensor.unsqueeze(0))  # Add batch dimension
+            inpainted_image = inpainted_image[0]  # Remove batch dimension
 
-        return inpainted_image.cpu()
+        # Apply inpainting to the original image
+        image_tensor[:, mask_tensor[0] == 0] = inpainted_image[:, mask_tensor[0] == 0]
+        # Remove padding
+        image_tensor = image_tensor[:, pad_h // 2 : height + pad_h // 2, pad_w // 2 : width + pad_w // 2]
+        image_tensor = self.to_pil(image_tensor.squeeze(0).cpu()) # Convert back to PIL image
+        return image_tensor.resize(original_size)
