@@ -9,3 +9,8 @@ model_cfg: "configs/sam2.1/sam2.1_hiera_b+.yaml"
 # Canvas Configuration
 mask_color: [0, 0, 255, 128]
 point_radius: 5
+
+# Inpainting Configuration
+inpaint_model: "conv_autoencoder"
+inpaint_checkpoint: "checkpoints/conv_autoencoder-epoch=05-val_loss=0.08.ckpt"
+img_dim: 800
