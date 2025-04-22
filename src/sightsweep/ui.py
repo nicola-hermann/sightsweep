@@ -211,10 +211,10 @@ class ImageClickerApp:
             return
 
         try:
-            self.pil_inpainting_display = self.pil_inpainting_original.resize(
-                (self.display_width, self.display_height), Image.Resampling.LANCZOS
-            )
-            self.tk_inpainting_display = ImageTk.PhotoImage(self.pil_inpainting_display)
+            # self.pil_inpainting_display = self.pil_inpainting_original.resize(
+            #     (self.display_width, self.display_height), Image.Resampling.LANCZOS
+            # )
+            self.tk_inpainting_display = ImageTk.PhotoImage(self.pil_inpainting_original)
             self.canvas_inpainting.config(width=self.display_width, height=self.display_height)
             self.canvas_inpainting.delete("all")
             self.canvas_inpainting.create_image(0, 0, anchor="nw", image=self.tk_inpainting_display)
