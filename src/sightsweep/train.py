@@ -25,9 +25,7 @@ def train(config=None):
         config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"
     ):
         config = wandb.config
-        wandb.run.name = (
-            f"{config['model_name']}_{config['lr']}_{config['weight_decay']}"
-        )
+        wandb.run.name = f"{config['model_name']}_lr_{config['lr']}_weight_decay_{config['weight_decay']}"
 
         # --- Dataset and DataLoader ---
         train_loader, val_loader = create_data_loaders(
@@ -174,6 +172,24 @@ def create_model(config):
         raise ValueError(f"Unknown model name: {config['model_name']}")
 
 
+def upload_model_to_wandb():
+    wandb.init(entity="cvai-sightsweep", project="sightsweep")
+    art = wandb.Artifact("conv_autoencoder_0.001_0.0001", type="model")
+    art.add_file(
+        "checkpoints\conv_autoencoder-epoch=07-val_loss=0.08.ckpt",
+        name="conv_autoencoder-epoch=07-val_loss=0.0807.ckpt",
+    )
+    art.add_file(
+        "checkpoints\conv_autoencoder-epoch=08-val_loss=0.08.ckpt",
+        name="conv_autoencoder-epoch=08-val_loss=0.0809.ckpt",
+    )
+    art.add_file(
+        "checkpoints\conv_autoencoder-epoch=09-val_loss=0.08.ckpt",
+        name="conv_autoencoder-epoch=09-val_loss=0.0811.ckpt",
+    )
+    wandb.log_artifact(art)
+
+
 if __name__ == "__main__":
     wandb.login()  # Login to Weights & Biases
     config = {
@@ -188,4 +204,7 @@ if __name__ == "__main__":
     #     [16, 32, 50, 55, 60, 64],
     #     img_size=config["img_dim"],
     # )  # Print memory usage for different batch sizes
+
+    # upload_model_to_wandb()
+
     train(config)
