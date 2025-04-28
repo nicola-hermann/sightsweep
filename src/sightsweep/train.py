@@ -4,7 +4,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import torch.optim as optim
-from sightsweep.conv_autoencoder import ConvAutoencoder
+from sightsweep.models import ConvAutoencoder, ConvVAE
 from sightsweep.dataset import SightSweepDataset
 from pathlib import Path
 import lightning as L
@@ -16,15 +16,21 @@ def train(config=None):
     wandb.finish()  # Finish any previous runs to avoid conflicts
     remove_old_checkpoints()
     device = get_device()
-    torch.set_float32_matmul_precision("high")  # Set float32 matmul precision to high for better performance
+    torch.set_float32_matmul_precision(
+        "high"
+    )  # Set float32 matmul precision to high for better performance
     L.seed_everything(42)  # Set random seed for reproducibility
 
-    with wandb.init(config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"):
+    with wandb.init(
+        config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"
+    ):
         config = wandb.config
         wandb.run.name = f"{config['model_name']}_lr_{config['lr']}_weight_decay_{config['weight_decay']}"
 
         # --- Dataset and DataLoader ---
-        train_loader, val_loader = create_data_loaders(config["batch_size"])
+        train_loader, val_loader = create_data_loaders(
+            config["batch_size"], config["img_dim"]
+        )
 
         # --- Model ---
         model = create_model(config).to(device=device)
@@ -42,7 +48,9 @@ def train(config=None):
             save_last=True,
             every_n_epochs=1,
         )
-        early_stopping_callback = EarlyStopping(monitor="val_loss", patience=5, verbose=True, mode="min")
+        early_stopping_callback = EarlyStopping(
+            monitor="val_loss", patience=5, verbose=True, mode="min"
+        )
 
         # --- Trainer ---
         trainer = Trainer(
@@ -51,7 +59,7 @@ def train(config=None):
             devices=1,
             logger=logger,
             callbacks=[checkpoint_callback, early_stopping_callback],
-            # profiler="simple",
+            profiler="simple",
         )
 
         # --- Training ---
@@ -80,16 +88,22 @@ def remove_old_checkpoints():
             os.remove(os.path.join("checkpoints/", file))
 
 
-def print_batch_size_mem_usage(config, batch_sizes: list):
+def print_batch_size_mem_usage(config, batch_sizes: list, img_size=512):
     """Print the memory usage of the model for different batch sizes."""
     device = get_device()
     model = create_model(config).to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+    optimizer = optim.AdamW(
+        model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"]
+    )
     model.train()  # Set the model to training mode
     for batch_size in batch_sizes:
-        x = torch.randn(batch_size, 3, 1024, 1024).to(device)  # (B, C, H, W)
-        mask = torch.ones((batch_size, 1, x.shape[-2], x.shape[-1])).to(device)  # (B, C, H, W)
-        mask[:, 0, 512:, 512:] = 0  # Set the bottom right corner to zero
+        x = torch.randn(batch_size, 3, img_size, img_size).to(device)  # (B, C, H, W)
+        mask = torch.ones((batch_size, 1, x.shape[-2], x.shape[-1])).to(
+            device
+        )  # (B, C, H, W)
+        mask[:, 0, img_size // 2 :, img_size // 2 :] = (
+            0  # Set the bottom right corner to zero
+        )
         x_hat = model(x, mask)
 
         # Backpropagation
@@ -100,23 +114,35 @@ def print_batch_size_mem_usage(config, batch_sizes: list):
 
         # Print memory usage
         torch.cuda.synchronize(device)
-        mem = torch.cuda.max_memory_allocated(device) / (1024**2)
-        mem_total = torch.cuda.get_device_properties(device).total_memory / (1024**2)
+        mem = torch.cuda.max_memory_allocated(device) / (img_size**2)
+        mem_total = torch.cuda.get_device_properties(device).total_memory / (
+            img_size**2
+        )
         mem_percent = mem / mem_total * 100
-        print(f"Batch size {batch_size}: {mem:.2f} MB / {mem_total:.2f} MB ({mem_percent:.2f}%)")
+        print(
+            f"Batch size {batch_size}: {mem:.2f} MB / {mem_total:.2f} MB ({mem_percent:.2f}%)"
+        )
         del x, mask, x_hat  # Delete tensors to free memory
         torch.cuda.empty_cache()  # Clear cache to avoid memory fragmentation
 
 
-def create_data_loaders(batch_size):
-    train_dataset = SightSweepDataset(data_folder=Path(r"data/train"), augmentation_fn=None)
-    val_dataset = SightSweepDataset(data_folder=Path(r"data/validation"), augmentation_fn=None)
+def create_data_loaders(batch_size, img_size=1024):
+    train_dataset = SightSweepDataset(
+        data_folder=Path(r"data/train"),
+        augmentation_fn=None,
+        max_img_dim=img_size,
+    )
+    val_dataset = SightSweepDataset(
+        data_folder=Path(r"data/validation"),
+        augmentation_fn=None,
+        max_img_dim=img_size,
+    )
 
     train_loader = DataLoader(
         train_dataset,
         batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=min(8, os.cpu_count()),
         pin_memory=True,
         persistent_workers=True,
     )
@@ -124,7 +150,7 @@ def create_data_loaders(batch_size):
         val_dataset,
         batch_size,
         shuffle=False,
-        num_workers=2,
+        num_workers=min(8, os.cpu_count()),
         pin_memory=True,
         persistent_workers=True,
     )
@@ -135,26 +161,50 @@ def create_data_loaders(batch_size):
 def create_model(config):
     if config["model_name"] == "conv_autoencoder":
         return ConvAutoencoder(config["lr"], config["weight_decay"])
+
+    elif config["model_name"] == "vae":
+        return ConvVAE(
+            lr=config["lr"],
+            weight_decay=config["weight_decay"],
+            img_size=config["img_dim"],
+        )
     else:
         raise ValueError(f"Unknown model name: {config['model_name']}")
-    
+
+
 def upload_model_to_wandb():
-    wandb.init(entity='cvai-sightsweep', project='sightsweep')
-    art = wandb.Artifact('conv_autoencoder_0.001_0.0001', type='model')
-    art.add_file('checkpoints\conv_autoencoder-epoch=07-val_loss=0.08.ckpt', name='conv_autoencoder-epoch=07-val_loss=0.0807.ckpt')
-    art.add_file('checkpoints\conv_autoencoder-epoch=08-val_loss=0.08.ckpt', name='conv_autoencoder-epoch=08-val_loss=0.0809.ckpt')
-    art.add_file('checkpoints\conv_autoencoder-epoch=09-val_loss=0.08.ckpt', name='conv_autoencoder-epoch=09-val_loss=0.0811.ckpt')
+    wandb.init(entity="cvai-sightsweep", project="sightsweep")
+    art = wandb.Artifact("conv_autoencoder_0.001_0.0001", type="model")
+    art.add_file(
+        "checkpoints\conv_autoencoder-epoch=07-val_loss=0.08.ckpt",
+        name="conv_autoencoder-epoch=07-val_loss=0.0807.ckpt",
+    )
+    art.add_file(
+        "checkpoints\conv_autoencoder-epoch=08-val_loss=0.08.ckpt",
+        name="conv_autoencoder-epoch=08-val_loss=0.0809.ckpt",
+    )
+    art.add_file(
+        "checkpoints\conv_autoencoder-epoch=09-val_loss=0.08.ckpt",
+        name="conv_autoencoder-epoch=09-val_loss=0.0811.ckpt",
+    )
     wandb.log_artifact(art)
 
 
 if __name__ == "__main__":
     wandb.login()  # Login to Weights & Biases
-    # config = {
-    #     "model_name": "conv_autoencoder",
-    #     "batch_size": 60,
-    #     "lr": 0.001,
-    #     "weight_decay": 0.0001,
-    # }
-    # print_batch_size_mem_usage(config, [16, 32, 50, 55, 60, 64])  # Print memory usage for different batch sizes
-    # train(config)
-    upload_model_to_wandb()
+    config = {
+        "model_name": "vae",  # "vae", "conv_autoencode"
+        "batch_size": 32,
+        "lr": 1e-4,
+        "weight_decay": 0.0001,
+        "img_dim": 512,
+    }
+    # print_batch_size_mem_usage(
+    #     config,
+    #     [16, 32, 50, 55, 60, 64],
+    #     img_size=config["img_dim"],
+    # )  # Print memory usage for different batch sizes
+
+    # upload_model_to_wandb()
+
+    train(config)
