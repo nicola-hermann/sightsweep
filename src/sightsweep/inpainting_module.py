@@ -44,7 +44,7 @@ class Inpainting:
         original_size = image.size
         image = image.convert("RGB")
         mask = mask.convert("L")
-        mask = mask.point(lambda p: 0 if p > 0 else 255, mode="1") # Convert to binary mask
+        mask = mask.point(lambda p: 0 if p > 0 else 255, mode="1")  # Convert to binary mask
         if max(image.size) > self.img_dim:
             image.thumbnail((self.img_dim, self.img_dim))
             mask.thumbnail((self.img_dim, self.img_dim))
@@ -52,6 +52,7 @@ class Inpainting:
         image_tensor = self.to_tensor(image).to(self.device)
         mask_tensor = self.to_tensor(mask).to(self.device)
 
+        image_tensor[:, mask_tensor[0] == 0] = 0  # Set masked pixels to black (0)
         [_, height, width] = image_tensor.shape
         pad_h = max(0, self.img_dim - height)
         pad_w = max(0, self.img_dim - width)
@@ -65,8 +66,10 @@ class Inpainting:
             inpainted_image = inpainted_image[0]  # Remove batch dimension
 
         # Apply inpainting to the original image
-        image_tensor[:, mask_tensor[0] == 0] = inpainted_image[:, mask_tensor[0] == 0]
+        # image_tensor[:, mask_tensor[0] == 0] = inpainted_image[:, mask_tensor[0] == 0]
+        image_tensor = inpainted_image
         # Remove padding
         image_tensor = image_tensor[:, pad_h // 2 : height + pad_h // 2, pad_w // 2 : width + pad_w // 2]
-        image_tensor = self.to_pil(image_tensor.squeeze(0).cpu()) # Convert back to PIL image
-        return image_tensor.resize(original_size)
+        image_tensor = self.to_pil(image_tensor.squeeze(0).cpu())  # Convert back to PIL image
+        # image_tensor.resize(original_size)
+        return image_tensor
