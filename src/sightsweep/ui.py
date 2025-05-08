@@ -383,6 +383,10 @@ class ImageClickerApp:
         self.positive_points = []
         self.negative_points = []
         self.current_mask_display = None
+        self.pil_inpainting_original = None  # Clear the inpainted image
+        self.pil_inpainting_display = None
+        self.tk_inpainting_display = None
+        self.canvas_inpainting.delete("all")  # Clear the inpainting canvas
         self.lbl_coords.configure(text="Clicks cleared. Add new points.")
         self._draw_canvas_content()
 
