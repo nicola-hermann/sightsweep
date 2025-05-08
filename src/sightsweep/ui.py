@@ -46,7 +46,7 @@ class ImageClickerApp:
         # --- Controls Frame ---
         self.controls_frame = ctk.CTkFrame(root, corner_radius=0)
         self.controls_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
-        self.controls_frame.grid_columnconfigure(2, weight=1)
+        self.controls_frame.grid_columnconfigure(3, weight=1)
 
         self.btn_select = ctk.CTkButton(
             self.controls_frame,
@@ -69,8 +69,33 @@ class ImageClickerApp:
         )
         self.btn_clear_clicks.grid(row=0, column=1, padx=5, pady=10)
 
+        # Add "Stamp Object" button
+        self.btn_stamp_object = ctk.CTkButton(
+            self.controls_frame,
+            text="Stamp Object",
+            command=self.stamp_object,
+            width=130,
+            height=35,
+            corner_radius=15,
+            state="disabled",  # Initially disabled
+        )
+        self.btn_stamp_object.grid(row=0, column=2, padx=5, pady=10)
+
+
         self.lbl_filepath = ctk.CTkLabel(self.controls_frame, text="No image selected", anchor="w", wraplength=600)
-        self.lbl_filepath.grid(row=0, column=2, sticky="ew", padx=5, pady=10)
+        self.lbl_filepath.grid(row=0, column=3, sticky="ew", padx=5, pady=10)
+        
+        # Add "Run Prediction" button
+        self.btn_run_prediction = ctk.CTkButton(
+            self.controls_frame,
+            text="Run Prediction",
+            command=self.run_inpainting,
+            width=130,
+            height=35,
+            corner_radius=15,
+            state="disabled",  # Initially disabled
+        )
+        self.btn_run_prediction.grid(row=0, column=4, padx=5, pady=10)
 
         # --- Display Frame Original ---
         self.display_frame = ctk.CTkFrame(root)
@@ -268,23 +293,27 @@ class ImageClickerApp:
             self.run_sam2_prediction()
             self._draw_canvas_content()
 
-            # --- Run Inprint Model --- #
-            self.run_inpainting()
-            self._update_display_inpainting()
-
         else:
             self.lbl_coords.configure(text="Clicked outside displayed image bounds")
+
+    def stamp_object(self):
+        self.btn_stamp_object.configure(state="disabled")
+        self.btn_run_prediction.configure(state="normal")
+        pass
 
     def run_inpainting(self):
         """Runs inpainting based on the current mask."""
         if not self.pil_image_original or not self.current_mask_display:
             return
 
+        self.btn_run_prediction.configure(state="disabled")
+
         try:
             self.pil_inpainting_original = self.inpainting.inpaint(
                 self.pil_image_original.copy(), self.current_mask_display.copy()
             )
             print("Inpainting done.")
+            self._update_display_inpainting()
 
         except Exception as e:
             messagebox.showerror("Inpainting Error", f"Error during inpainting:\n{e}")
@@ -305,6 +334,7 @@ class ImageClickerApp:
                 self.current_mask_display = self.sam_predictor.create_mask_image(mask_original_np, mask_color)
                 best_score = scores[0] if len(scores) > 0 else -1
                 self.lbl_coords.configure(text=f"Prediction done. Score: {best_score:.3f}")
+                self.btn_stamp_object.configure(state="normal")
                 print(f"Prediction score: {best_score:.3f}")
             else:
                 print("SAM2 did not return any masks.")
@@ -383,6 +413,8 @@ class ImageClickerApp:
             return
 
         print("Clearing clicks and mask.")
+        self.btn_stamp_object.configure(state="disabled")
+        self.btn_run_prediction.configure(state="disabled")
         self.positive_points = []
         self.negative_points = []
         self.current_mask_display = None
