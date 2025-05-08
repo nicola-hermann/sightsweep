@@ -6,6 +6,7 @@ from torchvision import transforms
 from sightsweep.sam_predictor_module import SAM2Predictor
 from sightsweep.inpainting_module import Inpainting
 import numpy as np
+import cv2
 
 
 class ImageClickerApp:
@@ -280,7 +281,15 @@ class ImageClickerApp:
             return
 
         try:
-            self.pil_inpainting_original = self.inpainting.inpaint(self.pil_image_original.copy(), self.current_mask_display.copy())
+            mask = self.current_mask_display.copy()
+            mask = mask.convert("L")  # Convert to grayscale
+            # Apply dilation to the mask
+            mask_np = np.array(mask)
+            kernel_size = self.config.get("dilation_kernel_size", 5)
+            kernel = np.ones((kernel_size, kernel_size), np.uint8)
+            dilated_mask_np = cv2.dilate(mask_np, kernel, iterations=1)
+            dilated_mask = Image.fromarray(dilated_mask_np)
+            self.pil_inpainting_original = self.inpainting.inpaint(self.pil_image_original.copy(), dilated_mask)
             print("Inpainting done.")
 
         except Exception as e:
