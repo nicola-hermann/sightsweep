@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk, ImageDraw, ImageOps
+from PIL import Image, ImageTk, ImageDraw, ImageOps, ImageChops
 import os
 from torchvision import transforms
 from sightsweep.sam_predictor_module import SAM2Predictor
@@ -38,6 +38,7 @@ class ImageClickerApp:
         self.positive_points = []
         self.negative_points = []
         self.current_mask_display = None
+        self.stamped_mask_display = None
 
         # --- UI Elements ---
         self.root.grid_columnconfigure(0, weight=1)
@@ -81,10 +82,9 @@ class ImageClickerApp:
         )
         self.btn_stamp_object.grid(row=0, column=2, padx=5, pady=10)
 
-
         self.lbl_filepath = ctk.CTkLabel(self.controls_frame, text="No image selected", anchor="w", wraplength=600)
         self.lbl_filepath.grid(row=0, column=3, sticky="ew", padx=5, pady=10)
-        
+
         # Add "Run Prediction" button
         self.btn_run_prediction = ctk.CTkButton(
             self.controls_frame,
@@ -297,26 +297,39 @@ class ImageClickerApp:
             self.lbl_coords.configure(text="Clicked outside displayed image bounds")
 
     def stamp_object(self):
+        if not self.current_mask_display:
+            return
+
         self.btn_stamp_object.configure(state="disabled")
         self.btn_run_prediction.configure(state="normal")
-        pass
+
+        # apply the current mask to the stamped mask with bitwise OR operation
+        if self.stamped_mask_display is None:
+            self.stamped_mask_display = Image.new("RGBA", self.current_mask_display.size, 0)
+        self.stamped_mask_display = ImageChops.add(self.stamped_mask_display, self.current_mask_display)
+        self.current_mask_display = Image.new("RGBA", self.current_mask_display.size, 0)
+        self.positive_points = []
+        self.negative_points = []
+        self._draw_canvas_content()
+        self.lbl_coords.configure(text="Object stamped. Add more points or run inpainting.")
 
     def run_inpainting(self):
         """Runs inpainting based on the current mask."""
-        if not self.pil_image_original or not self.current_mask_display:
+        if not self.pil_image_original or not self.stamped_mask_display:
             return
 
         self.btn_run_prediction.configure(state="disabled")
 
         try:
             self.pil_inpainting_original = self.inpainting.inpaint(
-                self.pil_image_original.copy(), self.current_mask_display.copy()
+                self.pil_image_original.copy(), self.stamped_mask_display.copy()
             )
-            print("Inpainting done.")
+            self.lbl_coords.configure(text="Inpainting done.")
             self._update_display_inpainting()
 
         except Exception as e:
             messagebox.showerror("Inpainting Error", f"Error during inpainting:\n{e}")
+            self.lbl_coords.configure(text="Inpainting failed.")
             print(f"Error during inpainting: {e}")
 
     def run_sam2_prediction(self):
@@ -359,10 +372,15 @@ class ImageClickerApp:
         # Base image for display (already resized)
         combined_image = self.pil_image_display.copy().convert("RGBA")
 
-        if self.current_mask_display:
+        if self.current_mask_display or self.stamped_mask_display:
             try:
                 # Convert the original-sized mask to RGBA
                 mask_original_rgba = self.current_mask_display.convert("RGBA")
+
+                # Add the stamped mask if it exists
+                if self.stamped_mask_display:
+                    mask_stamped_rgba = self.stamped_mask_display.convert("RGBA")
+                    mask_original_rgba = ImageChops.add(mask_original_rgba, mask_stamped_rgba)
 
                 mask_display_rgba = mask_original_rgba.resize(
                     (self.display_width, self.display_height), Image.Resampling.NEAREST
@@ -418,6 +436,7 @@ class ImageClickerApp:
         self.positive_points = []
         self.negative_points = []
         self.current_mask_display = None
+        self.stamped_mask_display = None
         self.pil_inpainting_original = None  # Clear the inpainted image
         self.pil_inpainting_display = None
         self.tk_inpainting_display = None
