@@ -7,6 +7,7 @@ import math
 from torch.utils.data import DataLoader
 from sightsweep.dataset import SightSweepDataset
 from torchvision.utils import make_grid  # For logging images
+import matplotlib.pyplot as plt  # For displaying patches
 
 # This code is inspired by the Mask-Aware Transformer (MAT) for image inpainting.
 # https://github.com/fenglinglwb/MAT/tree/main
@@ -149,12 +150,14 @@ class MaskAwareImageTransformer(nn.Module):  # This is the core nn.Module
 
     def patches_to_image(self, x):
         B = x.shape[0]
-        P = self.patch_size
-        C = self.num_channels
-        x = x.view(B, self.num_patches_h, self.num_patches_w, C, P, P)
-        x = x.permute(0, 3, 1, 2, 4, 5).contiguous()
-        x = x.view(B, C, self.num_patches_h * P, self.num_patches_w * P)
-        return x
+        num_patches = x.shape[1]
+        images = torch.zeros(B, self.num_channels, self.image_size, self.image_size, device=x.device)
+        for b in range(B):
+            for i in range(num_patches):
+                row, col = divmod(i, self.num_patches_w)
+                patch = x[b, i].view(self.num_channels, self.patch_size, self.patch_size)
+                images[b, :, row * self.patch_size : (row + 1) * self.patch_size, col * self.patch_size : (col + 1) * self.patch_size] = patch
+        return images
 
     def forward(self, patched_images, patch_level_mask_ones_unmasked):
         # patched_images: (B, NumPatches, PatchDim) - input patches (masked ones might be zeroed or special)
@@ -265,13 +268,39 @@ class MATInpaintingLitModule(L.LightningModule):
         patch_mask = patch_mask.view(pixel_mask_ones_unmasked.shape[0], -1)  # (B, NumPatches)
         return patch_mask
 
+    def display_patches(self, patches, title="Patches"):
+        """
+        Display patches in a popup window.
+
+        Args:
+            patches (torch.Tensor): Tensor of shape (B, NumPatches, PatchDim).
+            title (str): Title of the popup window.
+        """
+        B, NumPatches, PatchDim = patches.shape
+        patch_size = int(math.sqrt(PatchDim // self.hparams.num_channels))
+        num_patches_per_row = int(math.sqrt(NumPatches))
+
+        for b in range(B):
+            fig, axes = plt.subplots(num_patches_per_row, num_patches_per_row, figsize=(10, 10))
+            fig.suptitle(f"{title} - Batch {b + 1}", fontsize=16)
+            for i in range(NumPatches):
+                row, col = divmod(i, num_patches_per_row)
+                patch = patches[b, i].view(self.hparams.num_channels, patch_size, patch_size).permute(1, 2, 0).cpu().numpy()
+                axes[row, col].imshow(patch)
+                axes[row, col].axis("off")
+            plt.show()
+
     def forward(self, input_masked_imgs_pixels, pixel_mask_ones_unmasked, original_gt_imgs_pixels=None):
         # input_masked_imgs_pixels: (B, C, H, W) - image with masked areas (e.g., zeroed out)
         # pixel_mask_ones_unmasked: (B, 1, H, W) - 1 where content is original/valid, 0 where it's masked.
         # original_gt_imgs_pixels (Optional): (B,C,H,W) If provided, unmasked parts of output will be from this.
 
         input_patches = self.model.image_to_patches(input_masked_imgs_pixels)
+
+        # Display the input patches
+        # self.display_patches(input_patches, title="Input Patches")
         patch_level_mask_ones_unmasked = self.image_pixel_mask_to_patch_mask(pixel_mask_ones_unmasked)
+        print(f"Patch level mask shape: {patch_level_mask_ones_unmasked}")
 
         # Transformer predicts all patches based on the input_patches and attention mask
         predicted_patches_all = self.model(input_patches, patch_level_mask_ones_unmasked)
@@ -289,8 +318,9 @@ class MATInpaintingLitModule(L.LightningModule):
         else:
             final_patches = predicted_patches_all  # Output is model's prediction for all patches
 
+        final_patches.clamp_(0, 1)  # Ensure values are in [0, 1] range
+        # self.display_patches(predicted_patches_all, title="Predicted Patches")
         inpainted_image_reconstructed = self.model.patches_to_image(final_patches)
-        inpainted_image_reconstructed = torch.clamp(inpainted_image_reconstructed, 0, 1)
         return inpainted_image_reconstructed
 
     def _common_step(self, batch, batch_idx, stage):

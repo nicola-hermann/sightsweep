@@ -228,7 +228,7 @@ if __name__ == "__main__":
     wandb.login()  # Login to Weights & Biases
     # Base config
     base_config = {
-        "batch_size": 4,  # Start small for MAT
+        "batch_size": 64,  # Start small for MAT
         "weight_decay": 1e-5,  # MAT might prefer smaller weight decay
         "img_dim": 512,  # Start with smaller images for MAT
         "max_epochs": 15,
@@ -250,7 +250,7 @@ if __name__ == "__main__":
         "num_heads": 8,  # embed_dim (512) % num_heads (8) == 0
         "dropout": 0.1,
         "lr": 5e-5,  # Often transformers benefit from smaller LR with warmup
-        "accum_steps": 8,
+        # "accum_steps": 8,
     }
     # Ensure embed_dim is divisible by num_heads for MAT
     if mat_config["embed_dim"] % mat_config["num_heads"] != 0:
@@ -265,10 +265,10 @@ if __name__ == "__main__":
     # ----------------------------
 
     # To run memory benchmark:
-    print_batch_size_mem_usage(
-        current_config,  # Pass as a wandb.Config like object
-        batch_sizes=[1, 2, 4, 8, 16, 32, 64],  # Test these batch sizes
-        img_size=current_config["img_dim"],
-    )
+    # print_batch_size_mem_usage(
+    #     current_config,
+    #     batch_sizes=[1, 2, 4, 8, 16, 32, 64],  # Test these batch sizes
+    #     img_size=current_config["img_dim"],
+    # )
 
-    # train(current_config)
+    train(current_config)

@@ -11,6 +11,10 @@ mask_color: [0, 0, 255, 128]
 point_radius: 5
 
 # Inpainting Configuration
-inpaint_model: "conv_autoencoder"
-inpaint_checkpoint: "checkpoints/conv_autoencoder-epoch=07-val_loss=0.08.ckpt"
-img_dim: 800
+# inpaint_model: "conv_autoencoder"
+# inpaint_checkpoint: "checkpoints/conv_autoencoder-epoch=07-val_loss=0.08.ckpt"
+# img_dim: 800
+
+inpaint_model: "mat"
+inpaint_checkpoint: "mat_inpainting-epoch=06-val_loss=0.09.ckpt"
+img_dim: 512
