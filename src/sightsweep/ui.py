@@ -1,18 +1,24 @@
-import customtkinter as ctk
-from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk, ImageDraw, ImageOps
 import os
-from torchvision import transforms
-from sightsweep.sam_predictor_module import SAM2Predictor
-from sightsweep.inpainting_module import Inpainting
+from tkinter import filedialog, messagebox
+
+import customtkinter as ctk
 import numpy as np
+from PIL import Image, ImageDraw, ImageOps, ImageTk
+from torchvision import transforms
+
+from sightsweep.inpainting_module import Inpainting
+from sightsweep.sam_predictor_module import SAM2Predictor
 
 
 class ImageClickerApp:
-    def __init__(self, root: ctk.CTk, sam_predictor: SAM2Predictor, inpainting: Inpainting, config: dict):
+    def __init__(
+        self, root: ctk.CTk, sam_predictor: SAM2Predictor, inpainting: Inpainting, config: dict
+    ):
         self.root = root
         self.root.title("SightSweep - SAM2 Segmentation")
-        self.root.geometry(f"{config.get('max_display_width', 1920)}x{config.get('max_display_height', 1080)}")
+        self.root.geometry(
+            f"{config.get('max_display_width', 1920)}x{config.get('max_display_height', 1080)}"
+        )
         self.root.minsize(600, 500)
 
         self.sam_predictor = sam_predictor
@@ -68,7 +74,9 @@ class ImageClickerApp:
         )
         self.btn_clear_clicks.grid(row=0, column=1, padx=5, pady=10)
 
-        self.lbl_filepath = ctk.CTkLabel(self.controls_frame, text="No image selected", anchor="w", wraplength=600)
+        self.lbl_filepath = ctk.CTkLabel(
+            self.controls_frame, text="No image selected", anchor="w", wraplength=600
+        )
         self.lbl_filepath.grid(row=0, column=2, sticky="ew", padx=5, pady=10)
 
         # --- Display Frame Original ---
@@ -79,7 +87,9 @@ class ImageClickerApp:
         self.display_frame.grid_columnconfigure(1, weight=1)
 
         frame_bg_color = root.cget("fg_color")
-        canvas_bg = frame_bg_color[1] if isinstance(frame_bg_color, (list, tuple)) else frame_bg_color
+        canvas_bg = (
+            frame_bg_color[1] if isinstance(frame_bg_color, (list, tuple)) else frame_bg_color
+        )
         self.canvas = ctk.CTkCanvas(
             self.display_frame,
             bg=canvas_bg,
@@ -110,7 +120,9 @@ class ImageClickerApp:
     def select_image(self):
         """Opens dialog, loads image, prepares for display and SAM2."""
         if not self.sam_predictor.predictor:
-            messagebox.showwarning("SAM2 Not Ready", "SAM2 model is not loaded. Cannot process image.")
+            messagebox.showwarning(
+                "SAM2 Not Ready", "SAM2 model is not loaded. Cannot process image."
+            )
             return
 
         filetypes = (
@@ -204,7 +216,11 @@ class ImageClickerApp:
 
     def _update_display_inpainting(self):
         """Updates the inpainting display canvas."""
-        if self.pil_inpainting_original is None or self.display_width <= 0 or self.display_height <= 0:
+        if (
+            self.pil_inpainting_original is None
+            or self.display_width <= 0
+            or self.display_height <= 0
+        ):
             self.canvas_inpainting.delete("all")
             self.pil_inpainting_display = None
             self.tk_inpainting_display = None
@@ -221,12 +237,18 @@ class ImageClickerApp:
             self.canvas_inpainting.image = self.tk_inpainting_display  # Keep reference
         except Exception as e:
             print(f"Error updating inpainting display: {e}")
-            messagebox.showerror("Inpainting Display Error", f"Could not update inpainting display:\n{e}")
+            messagebox.showerror(
+                "Inpainting Display Error", f"Could not update inpainting display:\n{e}"
+            )
             self._reset_image_data()
 
     def on_window_resize(self, event=None):
         """Handle window resize event to recalculate display size and update."""
-        if self.pil_image_original and self.display_frame.winfo_width() > 1 and self.display_frame.winfo_height() > 1:
+        if (
+            self.pil_image_original
+            and self.display_frame.winfo_width() > 1
+            and self.display_frame.winfo_height() > 1
+        ):
             old_w, old_h = self.display_width, self.display_height
             self._calculate_display_size()
             if old_w != self.display_width or old_h != self.display_height:
@@ -260,7 +282,9 @@ class ImageClickerApp:
             else:
                 self.negative_points.append((original_x, original_y))
 
-            print(f"{point_type} click: Display=({display_x}, {display_y}), Original=({original_x}, {original_y})")
+            print(
+                f"{point_type} click: Display=({display_x}, {display_y}), Original=({original_x}, {original_y})"
+            )
             self.lbl_coords.configure(text=f"Added {point_type} point. Predicting...")
 
             # --- Run SAM2 Prediction --- #
@@ -280,7 +304,9 @@ class ImageClickerApp:
             return
 
         try:
-            self.pil_inpainting_original = self.inpainting.inpaint(self.pil_image_original.copy(), self.current_mask_display.copy())
+            self.pil_inpainting_original = self.inpainting.inpaint(
+                self.pil_image_original.copy(), self.current_mask_display.copy()
+            )
             print("Inpainting done.")
 
         except Exception as e:
@@ -289,17 +315,23 @@ class ImageClickerApp:
 
     def run_sam2_prediction(self):
         """Runs SAM2 prediction based on current points."""
-        if not self.sam_predictor.predictor or (not self.positive_points and not self.negative_points):
+        if not self.sam_predictor.predictor or (
+            not self.positive_points and not self.negative_points
+        ):
             self.current_mask_display = None
             return
 
         try:
-            masks, scores, logits = self.sam_predictor.predict(self.positive_points, self.negative_points)
+            masks, scores, logits = self.sam_predictor.predict(
+                self.positive_points, self.negative_points
+            )
 
             if masks is not None and masks.shape[0] > 0:
                 mask_original_np = masks[0].astype(bool)
                 mask_color = tuple(self.config.get("mask_color", [0, 0, 255, 128]))
-                self.current_mask_display = self.sam_predictor.create_mask_image(mask_original_np, mask_color)
+                self.current_mask_display = self.sam_predictor.create_mask_image(
+                    mask_original_np, mask_color
+                )
                 best_score = scores[0] if len(scores) > 0 else -1
                 self.lbl_coords.configure(text=f"Prediction done. Score: {best_score:.3f}")
                 print(f"Prediction score: {best_score:.3f}")

@@ -1,8 +1,8 @@
+import numpy as np
 import torch
+from PIL import Image
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-import numpy as np
-from PIL import Image
 
 
 class SAM2Predictor:

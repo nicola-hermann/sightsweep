@@ -1,10 +1,12 @@
 import os
+
 import torch
-from sightsweep.models.conv_autoencoder import ConvAutoencoder
-from sightsweep.models.vae import ConvVAE
+import torchvision.transforms.functional as TF
 from PIL import Image
 from torchvision import transforms
-import torchvision.transforms.functional as TF
+
+from sightsweep.models.conv_autoencoder import ConvAutoencoder
+from sightsweep.models.vae import ConvVAE
 
 
 class Inpainting:
@@ -48,9 +50,7 @@ class Inpainting:
     def inpaint(self, image: Image, mask: Image) -> Image:
         image = image.convert("RGB")
         mask = mask.convert("L")
-        mask = mask.point(
-            lambda p: 0 if p > 0 else 255, mode="1"
-        )  # Convert to binary mask
+        mask = mask.point(lambda p: 0 if p > 0 else 255, mode="1")  # Convert to binary mask
         if max(image.size) > self.img_dim:
             image.thumbnail((self.img_dim, self.img_dim))
             mask.thumbnail((self.img_dim, self.img_dim))
@@ -87,8 +87,6 @@ class Inpainting:
         image_tensor = image_tensor[
             :, pad_h // 2 : height + pad_h // 2, pad_w // 2 : width + pad_w // 2
         ]
-        image_tensor = self.to_pil(
-            image_tensor.squeeze(0).cpu()
-        )  # Convert back to PIL image
+        image_tensor = self.to_pil(image_tensor.squeeze(0).cpu())  # Convert back to PIL image
         # image_tensor.resize(original_size)
         return image_tensor

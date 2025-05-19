@@ -1,11 +1,13 @@
 from pathlib import Path
+
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
 import torch.nn.functional as F
 import torch.optim as optim
-from sightsweep.dataset import SightSweepDataset
 from torchinfo import summary
+
+from sightsweep.dataset import SightSweepDataset
 
 
 class ConvAutoencoder(pl.LightningModule):
@@ -14,27 +16,42 @@ class ConvAutoencoder(pl.LightningModule):
         self.save_hyperparameters()
 
         # Encoder
-        self.enc1 = nn.Sequential(nn.Conv2d(4, 32, 4, stride=2, padding=1), nn.ReLU())  # -> (B, 32, 512, 512)
-        self.enc2 = nn.Sequential(nn.Conv2d(32, 64, 4, stride=2, padding=1), nn.ReLU())  # -> (B, 64, 256, 256)
-        self.enc3 = nn.Sequential(nn.Conv2d(64, 128, 4, stride=2, padding=1), nn.ReLU())  # -> (B, 128, 128, 128)
-        self.enc4 = nn.Sequential(nn.Conv2d(128, 256, 4, stride=2, padding=1), nn.ReLU())  # -> (B, 256, 64, 64)
-        self.enc5 = nn.Sequential(nn.Conv2d(256, 512, 4, stride=2, padding=1), nn.ReLU())  # -> (B, 512, 32, 32)
+        self.enc1 = nn.Sequential(
+            nn.Conv2d(4, 32, 4, stride=2, padding=1), nn.ReLU()
+        )  # -> (B, 32, 512, 512)
+        self.enc2 = nn.Sequential(
+            nn.Conv2d(32, 64, 4, stride=2, padding=1), nn.ReLU()
+        )  # -> (B, 64, 256, 256)
+        self.enc3 = nn.Sequential(
+            nn.Conv2d(64, 128, 4, stride=2, padding=1), nn.ReLU()
+        )  # -> (B, 128, 128, 128)
+        self.enc4 = nn.Sequential(
+            nn.Conv2d(128, 256, 4, stride=2, padding=1), nn.ReLU()
+        )  # -> (B, 256, 64, 64)
+        self.enc5 = nn.Sequential(
+            nn.Conv2d(256, 512, 4, stride=2, padding=1), nn.ReLU()
+        )  # -> (B, 512, 32, 32)
 
         # Decoder
         self.dec5 = nn.Sequential(
-            nn.ConvTranspose2d(512, 256, 4, stride=2, padding=1), nn.ReLU()  # -> (B, 256, 64, 64)
+            nn.ConvTranspose2d(512, 256, 4, stride=2, padding=1),
+            nn.ReLU(),  # -> (B, 256, 64, 64)
         )
         self.dec4 = nn.Sequential(
-            nn.ConvTranspose2d(512, 128, 4, stride=2, padding=1), nn.ReLU()  # -> (B, 128, 128, 128)
+            nn.ConvTranspose2d(512, 128, 4, stride=2, padding=1),
+            nn.ReLU(),  # -> (B, 128, 128, 128)
         )
         self.dec3 = nn.Sequential(
-            nn.ConvTranspose2d(256, 64, 4, stride=2, padding=1), nn.ReLU()  # -> (B, 64, 256, 256)
+            nn.ConvTranspose2d(256, 64, 4, stride=2, padding=1),
+            nn.ReLU(),  # -> (B, 64, 256, 256)
         )
         self.dec2 = nn.Sequential(
-            nn.ConvTranspose2d(128, 32, 4, stride=2, padding=1), nn.ReLU()  # -> (B, 32, 512, 512)
+            nn.ConvTranspose2d(128, 32, 4, stride=2, padding=1),
+            nn.ReLU(),  # -> (B, 32, 512, 512)
         )
         self.dec1 = nn.Sequential(
-            nn.ConvTranspose2d(64, 3, 4, stride=2, padding=1), nn.Sigmoid()  # -> (B, 3, 1024, 1024)
+            nn.ConvTranspose2d(64, 3, 4, stride=2, padding=1),
+            nn.Sigmoid(),  # -> (B, 3, 1024, 1024)
         )
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -102,7 +119,9 @@ class ConvAutoencoder(pl.LightningModule):
 
     def masked_loss(self, x, x_hat, mask):
         mask = mask.expand_as(x)  # (B, 1, H, W) -> (B, 3, H, W)
-        return 0.9 * F.l1_loss(x_hat[mask == 0], x[mask == 0]) + 0.1 * F.mse_loss(x_hat[mask == 0], x[mask == 0])
+        return 0.9 * F.l1_loss(x_hat[mask == 0], x[mask == 0]) + 0.1 * F.mse_loss(
+            x_hat[mask == 0], x[mask == 0]
+        )
 
 
 if __name__ == "__main__":
@@ -114,7 +133,9 @@ if __name__ == "__main__":
     mask = torch.ones((1, 1, x.shape[-2], x.shape[-1])).to(device="cuda")  # (B, C, H, W)
     mask[:, 0, 512:, 512:] = 0  # Set the bottom right corner to zero
     x_hat = model(x, mask)
-    assert x_hat.shape == x.shape, f"Output shape {x_hat.shape} does not match input shape {x.shape}"
+    assert x_hat.shape == x.shape, (
+        f"Output shape {x_hat.shape} does not match input shape {x.shape}"
+    )
 
     # Test non-square input
     batch_size = 16
@@ -122,13 +143,15 @@ if __name__ == "__main__":
     mask = torch.ones((batch_size, 1, x.shape[-2], x.shape[-1])).to(device="cuda")  # (B, C, H, W)
     mask[:, 0, 512:, 512:] = 0  # Set the bottom right corner to zero
     x_hat = model(x, mask)
-    assert x_hat.shape == x.shape, f"Output shape {x_hat.shape} does not match input shape {x.shape}"
+    assert x_hat.shape == x.shape, (
+        f"Output shape {x_hat.shape} does not match input shape {x.shape}"
+    )
 
     dataset = SightSweepDataset(data_folder=Path(r"data\train"), augmentation_fn=None)
     masked_image, y, mask = dataset[0]
     mask = mask.unsqueeze(0).to(device="cuda")  # (B, 1, H, W)
     masked_image = masked_image.unsqueeze(0).to(device="cuda")  # (B, C, H, W)
     x_hat = model(masked_image, mask)
-    assert (
-        x_hat.shape == masked_image.shape
-    ), f"Output shape {x_hat.shape} does not match input shape {masked_image.shape}"
+    assert x_hat.shape == masked_image.shape, (
+        f"Output shape {x_hat.shape} does not match input shape {masked_image.shape}"
+    )

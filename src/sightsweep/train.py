@@ -1,15 +1,17 @@
-import torch
-from torch.utils.data import DataLoader
-from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-import torch.optim as optim
-from sightsweep.models import ConvAutoencoder, ConvVAE
-from sightsweep.dataset import SightSweepDataset
-from pathlib import Path
-import lightning as L
-import wandb
 import os
+from pathlib import Path
+
+import lightning as L
+import torch
+import torch.optim as optim
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
+from torch.utils.data import DataLoader
+
+import wandb
+from sightsweep.dataset import SightSweepDataset
+from sightsweep.models import ConvAutoencoder, ConvVAE
 
 
 def train(config=None):
@@ -25,12 +27,12 @@ def train(config=None):
         config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"
     ):
         config = wandb.config
-        wandb.run.name = f"{config['model_name']}_lr_{config['lr']}_weight_decay_{config['weight_decay']}"
+        wandb.run.name = (
+            f"{config['model_name']}_lr_{config['lr']}_weight_decay_{config['weight_decay']}"
+        )
 
         # --- Dataset and DataLoader ---
-        train_loader, val_loader = create_data_loaders(
-            config["batch_size"], config["img_dim"]
-        )
+        train_loader, val_loader = create_data_loaders(config["batch_size"], config["img_dim"])
 
         # --- Model ---
         model = create_model(config).to(device=device)
@@ -98,12 +100,8 @@ def print_batch_size_mem_usage(config, batch_sizes: list, img_size=512):
     model.train()  # Set the model to training mode
     for batch_size in batch_sizes:
         x = torch.randn(batch_size, 3, img_size, img_size).to(device)  # (B, C, H, W)
-        mask = torch.ones((batch_size, 1, x.shape[-2], x.shape[-1])).to(
-            device
-        )  # (B, C, H, W)
-        mask[:, 0, img_size // 2 :, img_size // 2 :] = (
-            0  # Set the bottom right corner to zero
-        )
+        mask = torch.ones((batch_size, 1, x.shape[-2], x.shape[-1])).to(device)  # (B, C, H, W)
+        mask[:, 0, img_size // 2 :, img_size // 2 :] = 0  # Set the bottom right corner to zero
         x_hat = model(x, mask)
 
         # Backpropagation
@@ -115,13 +113,9 @@ def print_batch_size_mem_usage(config, batch_sizes: list, img_size=512):
         # Print memory usage
         torch.cuda.synchronize(device)
         mem = torch.cuda.max_memory_allocated(device) / (img_size**2)
-        mem_total = torch.cuda.get_device_properties(device).total_memory / (
-            img_size**2
-        )
+        mem_total = torch.cuda.get_device_properties(device).total_memory / (img_size**2)
         mem_percent = mem / mem_total * 100
-        print(
-            f"Batch size {batch_size}: {mem:.2f} MB / {mem_total:.2f} MB ({mem_percent:.2f}%)"
-        )
+        print(f"Batch size {batch_size}: {mem:.2f} MB / {mem_total:.2f} MB ({mem_percent:.2f}%)")
         del x, mask, x_hat  # Delete tensors to free memory
         torch.cuda.empty_cache()  # Clear cache to avoid memory fragmentation
 
