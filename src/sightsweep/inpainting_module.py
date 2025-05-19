@@ -5,6 +5,8 @@ from sightsweep.models.vae import ConvVAE
 from PIL import Image
 from torchvision import transforms
 import torchvision.transforms.functional as TF
+import numpy as np
+import cv2
 
 
 class Inpainting:
@@ -48,12 +50,16 @@ class Inpainting:
     def inpaint(self, image: Image, mask: Image) -> Image:
         image = image.convert("RGB")
         mask = mask.convert("L")
-        mask = mask.point(
-            lambda p: 0 if p > 0 else 255, mode="1"
-        )  # Convert to binary mask
         if max(image.size) > self.img_dim:
             image.thumbnail((self.img_dim, self.img_dim))
             mask.thumbnail((self.img_dim, self.img_dim))
+
+        # Apply dilation to the mask
+        mask_np = np.array(mask)
+        kernel = np.ones((5, 5), np.uint8)
+        dilated_mask_np = cv2.dilate(mask_np, kernel, iterations=2)
+        mask = Image.fromarray(dilated_mask_np)
+        mask = mask.point(lambda p: 0 if p > 0 else 255, mode="1")  # Convert to binary mask
 
         image_tensor = self.to_tensor(image).to(self.device)
         mask_tensor = self.to_tensor(mask).to(self.device)
@@ -68,27 +74,19 @@ class Inpainting:
             pad_w - pad_w // 2,
             pad_h - pad_h // 2,
         ]  # [left, top, right, bottom]
-        image_tensor = TF.pad(
-            image_tensor, padding, fill=1
-        )  # Fill with white (1 for normalized images)
+        image_tensor = TF.pad(image_tensor, padding, fill=1)  # Fill with white (1 for normalized images)
         mask_tensor = TF.pad(mask_tensor, padding, fill=1)
 
         # Perform inpainting
         with torch.no_grad():
-            inpainted_image = self.model(
-                image_tensor.unsqueeze(0), mask_tensor.unsqueeze(0)
-            )  # Add batch dimension
+            inpainted_image = self.model(image_tensor.unsqueeze(0), mask_tensor.unsqueeze(0))  # Add batch dimension
             inpainted_image = inpainted_image[0]  # Remove batch dimension
 
         # Apply inpainting to the original image
         # image_tensor[:, mask_tensor[0] == 0] = inpainted_image[:, mask_tensor[0] == 0]
         image_tensor = inpainted_image
         # Remove padding
-        image_tensor = image_tensor[
-            :, pad_h // 2 : height + pad_h // 2, pad_w // 2 : width + pad_w // 2
-        ]
-        image_tensor = self.to_pil(
-            image_tensor.squeeze(0).cpu()
-        )  # Convert back to PIL image
+        image_tensor = image_tensor[:, pad_h // 2 : height + pad_h // 2, pad_w // 2 : width + pad_w // 2]
+        image_tensor = self.to_pil(image_tensor.squeeze(0).cpu())  # Convert back to PIL image
         # image_tensor.resize(original_size)
         return image_tensor

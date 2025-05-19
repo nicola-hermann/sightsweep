@@ -1,11 +1,12 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk, ImageDraw, ImageOps
+from PIL import Image, ImageTk, ImageDraw, ImageOps, ImageChops
 import os
 from torchvision import transforms
 from sightsweep.sam_predictor_module import SAM2Predictor
 from sightsweep.inpainting_module import Inpainting
 import numpy as np
+import cv2
 
 
 class ImageClickerApp:
@@ -37,6 +38,7 @@ class ImageClickerApp:
         self.positive_points = []
         self.negative_points = []
         self.current_mask_display = None
+        self.stamped_mask_display = None
 
         # --- UI Elements ---
         self.root.grid_columnconfigure(0, weight=1)
@@ -45,7 +47,7 @@ class ImageClickerApp:
         # --- Controls Frame ---
         self.controls_frame = ctk.CTkFrame(root, corner_radius=0)
         self.controls_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
-        self.controls_frame.grid_columnconfigure(2, weight=1)
+        self.controls_frame.grid_columnconfigure(3, weight=1)
 
         self.btn_select = ctk.CTkButton(
             self.controls_frame,
@@ -68,8 +70,32 @@ class ImageClickerApp:
         )
         self.btn_clear_clicks.grid(row=0, column=1, padx=5, pady=10)
 
+        # Add "Stamp Object" button
+        self.btn_stamp_object = ctk.CTkButton(
+            self.controls_frame,
+            text="Stamp Object",
+            command=self.stamp_object,
+            width=130,
+            height=35,
+            corner_radius=15,
+            state="disabled",  # Initially disabled
+        )
+        self.btn_stamp_object.grid(row=0, column=2, padx=5, pady=10)
+
         self.lbl_filepath = ctk.CTkLabel(self.controls_frame, text="No image selected", anchor="w", wraplength=600)
-        self.lbl_filepath.grid(row=0, column=2, sticky="ew", padx=5, pady=10)
+        self.lbl_filepath.grid(row=0, column=3, sticky="ew", padx=5, pady=10)
+
+        # Add "Run Prediction" button
+        self.btn_run_prediction = ctk.CTkButton(
+            self.controls_frame,
+            text="Run Prediction",
+            command=self.run_inpainting,
+            width=130,
+            height=35,
+            corner_radius=15,
+            state="disabled",  # Initially disabled
+        )
+        self.btn_run_prediction.grid(row=0, column=4, padx=5, pady=10)
 
         # --- Display Frame Original ---
         self.display_frame = ctk.CTkFrame(root)
@@ -267,24 +293,43 @@ class ImageClickerApp:
             self.run_sam2_prediction()
             self._draw_canvas_content()
 
-            # --- Run Inprint Model --- #
-            self.run_inpainting()
-            self._update_display_inpainting()
-
         else:
             self.lbl_coords.configure(text="Clicked outside displayed image bounds")
 
-    def run_inpainting(self):
-        """Runs inpainting based on the current mask."""
-        if not self.pil_image_original or not self.current_mask_display:
+    def stamp_object(self):
+        if not self.current_mask_display:
             return
 
+        self.btn_stamp_object.configure(state="disabled")
+        self.btn_run_prediction.configure(state="normal")
+
+        # apply the current mask to the stamped mask with bitwise OR operation
+        if self.stamped_mask_display is None:
+            self.stamped_mask_display = Image.new("RGBA", self.current_mask_display.size, 0)
+        self.stamped_mask_display = ImageChops.add(self.stamped_mask_display, self.current_mask_display)
+        self.current_mask_display = Image.new("RGBA", self.current_mask_display.size, 0)
+        self.positive_points = []
+        self.negative_points = []
+        self._draw_canvas_content()
+        self.lbl_coords.configure(text="Object stamped. Add more points or run inpainting.")
+
+    def run_inpainting(self):
+        """Runs inpainting based on the current mask."""
+        if not self.pil_image_original or not self.stamped_mask_display:
+            return
+
+        self.btn_run_prediction.configure(state="disabled")
+
         try:
-            self.pil_inpainting_original = self.inpainting.inpaint(self.pil_image_original.copy(), self.current_mask_display.copy())
-            print("Inpainting done.")
+            self.pil_inpainting_original = self.inpainting.inpaint(
+                self.pil_image_original.copy(), self.stamped_mask_display.copy()
+            )
+            self.lbl_coords.configure(text="Inpainting done.")
+            self._update_display_inpainting()
 
         except Exception as e:
             messagebox.showerror("Inpainting Error", f"Error during inpainting:\n{e}")
+            self.lbl_coords.configure(text="Inpainting failed.")
             print(f"Error during inpainting: {e}")
 
     def run_sam2_prediction(self):
@@ -302,6 +347,7 @@ class ImageClickerApp:
                 self.current_mask_display = self.sam_predictor.create_mask_image(mask_original_np, mask_color)
                 best_score = scores[0] if len(scores) > 0 else -1
                 self.lbl_coords.configure(text=f"Prediction done. Score: {best_score:.3f}")
+                self.btn_stamp_object.configure(state="normal")
                 print(f"Prediction score: {best_score:.3f}")
             else:
                 print("SAM2 did not return any masks.")
@@ -326,10 +372,15 @@ class ImageClickerApp:
         # Base image for display (already resized)
         combined_image = self.pil_image_display.copy().convert("RGBA")
 
-        if self.current_mask_display:
+        if self.current_mask_display or self.stamped_mask_display:
             try:
                 # Convert the original-sized mask to RGBA
                 mask_original_rgba = self.current_mask_display.convert("RGBA")
+
+                # Add the stamped mask if it exists
+                if self.stamped_mask_display:
+                    mask_stamped_rgba = self.stamped_mask_display.convert("RGBA")
+                    mask_original_rgba = ImageChops.add(mask_original_rgba, mask_stamped_rgba)
 
                 mask_display_rgba = mask_original_rgba.resize(
                     (self.display_width, self.display_height), Image.Resampling.NEAREST
@@ -380,9 +431,16 @@ class ImageClickerApp:
             return
 
         print("Clearing clicks and mask.")
+        self.btn_stamp_object.configure(state="disabled")
+        self.btn_run_prediction.configure(state="disabled")
         self.positive_points = []
         self.negative_points = []
         self.current_mask_display = None
+        self.stamped_mask_display = None
+        self.pil_inpainting_original = None  # Clear the inpainted image
+        self.pil_inpainting_display = None
+        self.tk_inpainting_display = None
+        self.canvas_inpainting.delete("all")  # Clear the inpainting canvas
         self.lbl_coords.configure(text="Clicks cleared. Add new points.")
         self._draw_canvas_content()
 
