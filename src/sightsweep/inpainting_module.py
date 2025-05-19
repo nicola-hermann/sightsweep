@@ -2,6 +2,7 @@ import os
 import torch
 from sightsweep.models.conv_autoencoder import ConvAutoencoder
 from sightsweep.models.vae import ConvVAE
+from sightsweep.models.mat import MATInpaintingLitModule
 from PIL import Image
 from torchvision import transforms
 import torchvision.transforms.functional as TF
@@ -45,11 +46,19 @@ class Inpainting:
             model.eval()
             return model
 
+        if model_name == "mat":
+            model = MATInpaintingLitModule.load_from_checkpoint(checkpoint_path)
+            model.eval()
+            return model
+
         raise ValueError(f"Model {model_name} not supported.")
 
     def inpaint(self, image: Image, mask: Image) -> Image:
         image = image.convert("RGB")
         mask = mask.convert("L")
+
+        mask = mask.point(lambda p: 0 if p > 0 else 255, mode="1")  # Convert to binary mask
+
         if max(image.size) > self.img_dim:
             image.thumbnail((self.img_dim, self.img_dim))
             mask.thumbnail((self.img_dim, self.img_dim))
@@ -83,8 +92,8 @@ class Inpainting:
             inpainted_image = inpainted_image[0]  # Remove batch dimension
 
         # Apply inpainting to the original image
-        # image_tensor[:, mask_tensor[0] == 0] = inpainted_image[:, mask_tensor[0] == 0]
-        image_tensor = inpainted_image
+        image_tensor[:, mask_tensor[0] == 0] = inpainted_image[:, mask_tensor[0] == 0]
+        # image_tensor = inpainted_image
         # Remove padding
         image_tensor = image_tensor[:, pad_h // 2 : height + pad_h // 2, pad_w // 2 : width + pad_w // 2]
         image_tensor = self.to_pil(image_tensor.squeeze(0).cpu())  # Convert back to PIL image

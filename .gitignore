@@ -180,3 +180,4 @@ validation
 test
 wandb
 checkpoints
+*.ckpt
