@@ -6,6 +6,8 @@ from sightsweep.models.mat import MATInpaintingLitModule
 from PIL import Image
 from torchvision import transforms
 import torchvision.transforms.functional as TF
+import numpy as np
+import cv2
 
 
 class Inpainting:
@@ -54,10 +56,19 @@ class Inpainting:
     def inpaint(self, image: Image, mask: Image) -> Image:
         image = image.convert("RGB")
         mask = mask.convert("L")
+
         mask = mask.point(lambda p: 0 if p > 0 else 255, mode="1")  # Convert to binary mask
+
         if max(image.size) > self.img_dim:
             image.thumbnail((self.img_dim, self.img_dim))
             mask.thumbnail((self.img_dim, self.img_dim))
+
+        # Apply dilation to the mask
+        mask_np = np.array(mask)
+        kernel = np.ones((5, 5), np.uint8)
+        dilated_mask_np = cv2.dilate(mask_np, kernel, iterations=2)
+        mask = Image.fromarray(dilated_mask_np)
+        mask = mask.point(lambda p: 0 if p > 0 else 255, mode="1")  # Convert to binary mask
 
         image_tensor = self.to_tensor(image).to(self.device)
         mask_tensor = self.to_tensor(mask).to(self.device)
