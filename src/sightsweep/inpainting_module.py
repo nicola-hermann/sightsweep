@@ -1,13 +1,15 @@
 import os
+
+import cv2
+import numpy as np
 import torch
-from sightsweep.models.conv_autoencoder import ConvAutoencoder
-from sightsweep.models.vae import ConvVAE
-from sightsweep.models.mat import MATInpaintingLitModule
+import torchvision.transforms.functional as TF
 from PIL import Image
 from torchvision import transforms
-import torchvision.transforms.functional as TF
-import numpy as np
-import cv2
+
+from sightsweep.models.conv_autoencoder import ConvAutoencoder
+from sightsweep.models.mat import MATInpaintingLitModule
+from sightsweep.models.vae import ConvVAE
 
 
 class Inpainting:
@@ -83,19 +85,25 @@ class Inpainting:
             pad_w - pad_w // 2,
             pad_h - pad_h // 2,
         ]  # [left, top, right, bottom]
-        image_tensor = TF.pad(image_tensor, padding, fill=1)  # Fill with white (1 for normalized images)
+        image_tensor = TF.pad(
+            image_tensor, padding, fill=1
+        )  # Fill with white (1 for normalized images)
         mask_tensor = TF.pad(mask_tensor, padding, fill=1)
 
         # Perform inpainting
         with torch.no_grad():
-            inpainted_image = self.model(image_tensor.unsqueeze(0), mask_tensor.unsqueeze(0))  # Add batch dimension
+            inpainted_image = self.model(
+                image_tensor.unsqueeze(0), mask_tensor.unsqueeze(0)
+            )  # Add batch dimension
             inpainted_image = inpainted_image[0]  # Remove batch dimension
 
         # Apply inpainting to the original image
         image_tensor[:, mask_tensor[0] == 0] = inpainted_image[:, mask_tensor[0] == 0]
         # image_tensor = inpainted_image
         # Remove padding
-        image_tensor = image_tensor[:, pad_h // 2 : height + pad_h // 2, pad_w // 2 : width + pad_w // 2]
+        image_tensor = image_tensor[
+            :, pad_h // 2 : height + pad_h // 2, pad_w // 2 : width + pad_w // 2
+        ]
         image_tensor = self.to_pil(image_tensor.squeeze(0).cpu())  # Convert back to PIL image
         # image_tensor.resize(original_size)
         return image_tensor

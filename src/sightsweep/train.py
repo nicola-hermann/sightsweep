@@ -1,33 +1,37 @@
 import gc
-import torch
-from torch.utils.data import DataLoader
-from lightning import Trainer
-from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
-import torch.optim as optim
-from torchinfo import summary
-from sightsweep.models import ConvAutoencoder, ConvVAE, MATInpaintingLitModule
-from sightsweep.dataset import SightSweepDataset
-from pathlib import Path
-import lightning as L
-import wandb
 import os
+from pathlib import Path
+
+import lightning as L
+import torch
+import torch.optim as optim
+from lightning import Trainer
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.loggers import WandbLogger
+from torch.utils.data import DataLoader
+from torchinfo import summary
+
+import wandb
+from sightsweep.dataset import SightSweepDataset
+from sightsweep.models import ConvAutoencoder, ConvVAE, MATInpaintingLitModule
 
 
 def train(config=None):
     wandb.finish()  # Finish any previous runs to avoid conflicts
     remove_old_checkpoints()
     device = get_device()
-    torch.set_float32_matmul_precision("high")  # Set float32 matmul precision to high for better performance
+    torch.set_float32_matmul_precision(
+        "high"
+    )  # Set float32 matmul precision to high for better performance
     L.seed_everything(42)  # Set random seed for reproducibility
 
-    with wandb.init(config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"):
+    with wandb.init(
+        config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"
+    ):
         config = wandb.config
         run_name = f"{config['model_name']}_lr_{config['lr']}_weight_decay_{config['weight_decay']}"
         if config.model_name == "mat_inpainting":
-            run_name += (
-                f"_patch_{config.patch_size}_dim_{config.embed_dim}_heads_{config.num_heads}_layers_{config.num_layers}"
-            )
+            run_name += f"_patch_{config.patch_size}_dim_{config.embed_dim}_heads_{config.num_heads}_layers_{config.num_layers}"
         wandb.run.name = run_name
 
         # --- Dataset and DataLoader ---
@@ -49,7 +53,9 @@ def train(config=None):
             save_last=True,
             every_n_epochs=1,
         )
-        early_stopping_callback = EarlyStopping(monitor="val_loss", patience=3, verbose=True, mode="min")
+        early_stopping_callback = EarlyStopping(
+            monitor="val_loss", patience=3, verbose=True, mode="min"
+        )
 
         # --- Trainer ---
         trainer = Trainer(
@@ -97,8 +103,17 @@ def print_batch_size_mem_usage(config, batch_sizes: list, img_size=512):
     """Print the memory usage of the model for different batch sizes."""
     device = get_device()
     model = create_model(config).to(device)
-    summary(model, input_size=[(batch_sizes[-1], 3, img_size, img_size), (batch_sizes[-1], 1, img_size, img_size)], device=device)
-    optimizer = optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+    summary(
+        model,
+        input_size=[
+            (batch_sizes[-1], 3, img_size, img_size),
+            (batch_sizes[-1], 1, img_size, img_size),
+        ],
+        device=device,
+    )
+    optimizer = optim.AdamW(
+        model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"]
+    )
     model.train()  # Set the model to training mode
     train_dataset = SightSweepDataset(
         data_folder=Path(r"data/train"),
@@ -254,9 +269,13 @@ if __name__ == "__main__":
     }
     # Ensure embed_dim is divisible by num_heads for MAT
     if mat_config["embed_dim"] % mat_config["num_heads"] != 0:
-        print(f"Adjusting MAT embed_dim or num_heads: {mat_config['embed_dim']}%{mat_config['num_heads']} != 0")
+        print(
+            f"Adjusting MAT embed_dim or num_heads: {mat_config['embed_dim']}%{mat_config['num_heads']} != 0"
+        )
         # Simple adjustment: make embed_dim divisible, could also adjust num_heads
-        mat_config["embed_dim"] = (mat_config["embed_dim"] // mat_config["num_heads"]) * mat_config["num_heads"]
+        mat_config["embed_dim"] = (mat_config["embed_dim"] // mat_config["num_heads"]) * mat_config[
+            "num_heads"
+        ]
         print(f"New embed_dim: {mat_config['embed_dim']}")
 
     # --- SELECT CONFIG TO RUN ---

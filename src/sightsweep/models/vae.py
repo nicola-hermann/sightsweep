@@ -1,9 +1,10 @@
+from typing import Dict, Optional, Tuple
+
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import pytorch_lightning as pl
-from typing import Tuple, Dict, Optional
 
 # --- Optional: Add imports if logging images ---
 try:
@@ -54,9 +55,7 @@ class ConvVAE(pl.LightningModule):
     ):  # Add img_size for potential future use/assertions
         super().__init__()
         assert latent_dim > 0
-        assert img_size % 32 == 0, (
-            "Image size must be divisible by 32 due to 5 down/up samples"
-        )
+        assert img_size % 32 == 0, "Image size must be divisible by 32 due to 5 down/up samples"
         self.save_hyperparameters()
         self.latent_dim = latent_dim
         self.kl_weight = kl_weight
@@ -77,12 +76,8 @@ class ConvVAE(pl.LightningModule):
 
         # --- Latent Space Projection ---
         bottleneck_channels = encoder_channels[-1]  # 512
-        self.fc_mu = nn.Conv2d(
-            bottleneck_channels, self.latent_dim, kernel_size=3, padding=1
-        )
-        self.fc_logvar = nn.Conv2d(
-            bottleneck_channels, self.latent_dim, kernel_size=3, padding=1
-        )
+        self.fc_mu = nn.Conv2d(bottleneck_channels, self.latent_dim, kernel_size=3, padding=1)
+        self.fc_logvar = nn.Conv2d(bottleneck_channels, self.latent_dim, kernel_size=3, padding=1)
         # Output shape: (B, latent_dim, latent_spatial_dim, latent_spatial_dim)
 
         # --- Decoder Input Projection ---
@@ -162,15 +157,11 @@ class ConvVAE(pl.LightningModule):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def decode(
-        self, z: torch.Tensor, skip_connections: Dict[str, torch.Tensor]
-    ) -> torch.Tensor:
+    def decode(self, z: torch.Tensor, skip_connections: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
         Decodes the latent variable z back into an image using skip connections.
         """
-        current_feature = self.decoder_input(
-            z
-        )  # Project latent z back to bottleneck channels
+        current_feature = self.decoder_input(z)  # Project latent z back to bottleneck channels
 
         # Apply decoder blocks with skip connections
         current_feature = self.decoder_blocks[0](current_feature)  # First block (dec5)
@@ -216,9 +207,7 @@ class ConvVAE(pl.LightningModule):
         pixels_pred = prediction[mask_expanded == 0]
         pixels_target = target[mask_expanded == 0]
 
-        if (
-            pixels_pred.numel() == 0
-        ):  # Handle case where mask is all 1s (no inpainting needed)
+        if pixels_pred.numel() == 0:  # Handle case where mask is all 1s (no inpainting needed)
             # Return a zero loss tensor that requires gradients
             return torch.tensor(0.0, device=target.device, requires_grad=True)
 
@@ -231,9 +220,7 @@ class ConvVAE(pl.LightningModule):
         # return loss_l1
         return 0.9 * loss_l1 + 0.1 * loss_mse
 
-    def kl_divergence_loss(
-        self, mu: torch.Tensor, logvar: torch.Tensor
-    ) -> torch.Tensor:
+    def kl_divergence_loss(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         """Calculates the KL divergence loss."""
         # KL divergence between N(mu, var) and N(0, 1)
         # Formula: 0.5 * sum(1 + log(var) - mu^2 - var) per element
@@ -310,15 +297,9 @@ class ConvVAE(pl.LightningModule):
             grid_orig = torchvision.utils.make_grid(label[:num_log_images])
             grid_masked = torchvision.utils.make_grid(x_masked[:num_log_images])
             grid_recon = torchvision.utils.make_grid(x_hat[:num_log_images].clamp(0, 1))
-            self.logger.log_image(
-                f"{stage}_original_images", [grid_orig], self.global_step
-            )
-            self.logger.log_image(
-                f"{stage}_masked_images", [grid_masked], self.global_step
-            )
-            self.logger.log_image(
-                f"{stage}_reconstructed_images", [grid_recon], self.global_step
-            )
+            self.logger.log_image(f"{stage}_original_images", [grid_orig], self.global_step)
+            self.logger.log_image(f"{stage}_masked_images", [grid_masked], self.global_step)
+            self.logger.log_image(f"{stage}_reconstructed_images", [grid_recon], self.global_step)
 
         return total_loss
 
