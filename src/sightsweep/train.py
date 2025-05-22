@@ -203,6 +203,14 @@ def create_model(config: dict):
             lr=config["lr"],
             weight_decay=config["weight_decay"],
             img_size=config["img_dim"],
+            latent_dim=config["latent_dim"],
+            num_groups=config["num_groups"],
+            upsample_mode=config["upsample_mode"],
+            kl_weight=config["kl_weight"],
+            kl_anneal_epochs=config.get("kl_anneal_epochs", 0),  # Use .get for optional params
+            kl_anneal_start_epoch=config.get("kl_anneal_start_epoch", 0),
+            kl_anneal_factor=config.get("kl_anneal_factor", 1.0),
+            # input_channels and output_channels can also be in config if they vary
         )
     elif config["model_name"] == "mat_inpainting":
         return MATInpaintingLitModule(
@@ -251,9 +259,19 @@ if __name__ == "__main__":
 
     # Model specific configs
     vae_config = {
-        **base_config,
         "model_name": "vae",
         "lr": 1e-4,
+        "weight_decay": 1e-4,
+        "img_dim": 512,
+        "batch_size": 16,  # Adjust based on new model size and GPU memory
+        # New/Updated Hyperparameters for ConvVAE
+        "latent_dim": 64,  # Experiment with this
+        "num_groups": 32,  # Standard for GroupNorm
+        "upsample_mode": "bilinear",
+        "kl_weight": 1e-5,  # Base KL weight
+        "kl_anneal_epochs": 5,  # Anneal KL weight over 20 epochs
+        "kl_anneal_start_epoch": 2,  # Start annealing after 5 epochs
+        "kl_anneal_factor": 1.0,  # Reach kl_weight * 1.0 at the end
     }
 
     mat_config = {
@@ -280,7 +298,7 @@ if __name__ == "__main__":
 
     # --- SELECT CONFIG TO RUN ---
     # current_config = vae_config
-    current_config = mat_config
+    current_config = vae_config
     # ----------------------------
 
     # To run memory benchmark:

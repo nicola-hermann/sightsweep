@@ -1,9 +1,10 @@
+import gc
 import os
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
-import cv2
 import numpy as np
+import torch
 from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageTk
 from torchvision import transforms
 
@@ -340,23 +341,77 @@ class ImageClickerApp:
         self.lbl_coords.configure(text="Object stamped. Add more points or run inpainting.")
 
     def run_inpainting(self):
-        """Runs inpainting based on the current mask."""
+        """Runs inpainting based on the current mask, managing GPU memory."""
         if not self.pil_image_original or not self.stamped_mask_display:
+            messagebox.showinfo("Inpainting", "Please load an image and stamp a mask first.")
             return
 
         self.btn_run_prediction.configure(state="disabled")
+        self.lbl_coords.configure(text="Inpainting in progress...")
+        self.root.update_idletasks()  # Update UI to show message
+
+        original_sam_device = None
+        cpu_device = torch.device("cpu")
+        sam_moved = False
 
         try:
+            # 1. Get SAM's current device and move SAM to CPU
+            if hasattr(self.sam_predictor, "get_model_device") and hasattr(
+                self.sam_predictor, "to_device"
+            ):
+                original_sam_device = self.sam_predictor.get_model_device()
+                if original_sam_device != cpu_device:
+                    print(f"Moving SAM model from {original_sam_device} to CPU...")
+                    self.sam_predictor.to_device(cpu_device)
+                    if original_sam_device.type == "cuda":
+                        torch.cuda.empty_cache()
+                    gc.collect()
+                    sam_moved = True
+            else:
+                print(
+                    "Warning: SAM predictor does not have get_model_device or to_device methods. Cannot manage SAM device."
+                )
+
+            # 2. Perform inpainting
+            # The inpainting_module.inpaint() method now handles its own model loading/unloading.
+            print("Calling inpainting module...")
             self.pil_inpainting_original = self.inpainting.inpaint(
                 self.pil_image_original.copy(), self.stamped_mask_display.copy()
             )
-            self.lbl_coords.configure(text="Inpainting done.")
-            self._update_display_inpainting()
+            print("Inpainting module finished.")
+
+            if self.pil_inpainting_original:
+                self.lbl_coords.configure(text="Inpainting done.")
+                self._update_display_inpainting()
+            else:
+                self.lbl_coords.configure(text="Inpainting failed to produce an image.")
+                messagebox.showerror("Inpainting Error", "Inpainting did not return an image.")
 
         except Exception as e:
             messagebox.showerror("Inpainting Error", f"Error during inpainting:\n{e}")
             self.lbl_coords.configure(text="Inpainting failed.")
             print(f"Error during inpainting: {e}")
+            import traceback
+
+            traceback.print_exc()
+        finally:
+            # 3. Move SAM back to its original device
+            if sam_moved and original_sam_device is not None:
+                current_sam_device = (
+                    self.sam_predictor.get_model_device()
+                )  # Re-check, might have changed if error
+                if current_sam_device != original_sam_device:
+                    print(f"Moving SAM model back to {original_sam_device}...")
+                    self.sam_predictor.to_device(original_sam_device)
+                    # Clear cache only if it was on CPU and original was CUDA
+                    if original_sam_device.type == "cuda" and current_sam_device.type == "cpu":
+                        torch.cuda.empty_cache()
+                    gc.collect()
+                    print("SAM model restored to original device.")
+
+            self.btn_run_prediction.configure(state="normal")  # Re-enable button
+            self.root.update_idletasks()
+            print("run_inpainting function finished.")
 
     def run_sam2_prediction(self):
         """Runs SAM2 prediction based on current points."""

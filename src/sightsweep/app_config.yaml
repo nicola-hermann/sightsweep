@@ -11,10 +11,29 @@ mask_color: [0, 0, 255, 128]
 point_radius: 5
 
 # Inpainting Configuration
-# inpaint_model: "conv_autoencoder"
-# inpaint_checkpoint: "checkpoints/conv_autoencoder-epoch=07-val_loss=0.08.ckpt"
-# img_dim: 800
+inpaint_model: "conv_autoencoder"
+inpaint_checkpoint: "checkpoints/conv_autoencoder-epoch=07-val_loss=0.08.ckpt"
+img_dim: 800
 
-inpaint_model: "mat"
-inpaint_checkpoint: "mat_inpainting-epoch=06-val_loss=0.09.ckpt"
-img_dim: 512
+# inpaint_model: "mat"
+# inpaint_checkpoint: "mat_inpainting-epoch=06-val_loss=0.09.ckpt"
+# img_dim: 512
+
+# inpaint_model: "vae"
+# inpaint_checkpoint: "checkpoints/vae-epoch=08-val_loss=0.09.ckpt"
+# img_dim: 512
+
+# Upscaler settings
+enable_upscaling: false # Uses a lot of memory, so set to false if you don't need it.
+
+flux_controlnet_model_id: "jasperai/Flux.1-dev-Controlnet-Upscaler"
+flux_pipeline_model_id: "black-forest-labs/FLUX.1-dev"
+flux_torch_dtype: "float16" # Options: "bfloat16", "float16", "float32".
+flux_upscale_factor: 2
+flux_pil_resampling_method: "LANCZOS" # For pre-resize. Options: "NEAREST", "BOX", "BILINEAR", "HAMMING", "BICUBIC", "LANCZOS"
+
+flux_prompt: ""
+flux_controlnet_conditioning_scale: 0.6
+flux_num_inference_steps: 28
+flux_guidance_scale: 3.5
+flux_pre_upscale_max_dim: 512
