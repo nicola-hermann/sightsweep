@@ -1,8 +1,8 @@
+import numpy as np
 import torch
+from PIL import Image
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-import numpy as np
-from PIL import Image
 
 
 class SAM2Predictor:
@@ -19,6 +19,8 @@ class SAM2Predictor:
 
         self.sam_checkpoint = config.get("sam_checkpoint")
         self.model_cfg = config.get("model_cfg")
+
+        self.original_device = self.device
 
         if not self.sam_checkpoint or not self.model_cfg:
             raise ValueError("SAM checkpoint or model config not found in config.")
@@ -58,3 +60,26 @@ class SAM2Predictor:
         mask_color_image = np.zeros((*mask_np.shape, 4), dtype=np.uint8)
         mask_color_image[mask_np] = color
         return Image.fromarray(mask_color_image, "RGBA")
+
+    def to_device(self, target_device: torch.device):
+        """Moves the SAM model to the specified device."""
+        try:
+            if hasattr(self, "model") and self.model is not None:
+                self.model.to(target_device)
+                self.device = target_device  # Update current device
+                print(f"SAM model moved to {target_device}")
+            else:
+                print("SAM model not loaded, cannot move device.")
+        except Exception as e:
+            print(f"Error moving SAM model to {target_device}: {e}")
+
+    def get_model_device(self):
+        """Returns the current device of the SAM model."""
+        if hasattr(self, "model") and self.model is not None:
+            try:
+                return next(self.model.parameters()).device
+            except StopIteration:
+                return self.device
+            except AttributeError:
+                return self.device
+        return self.device

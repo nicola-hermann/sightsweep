@@ -1,9 +1,11 @@
-import customtkinter as ctk
 import os
+
+import customtkinter as ctk
 import yaml
-from sightsweep.ui import ImageClickerApp
-from sightsweep.sam_predictor_module import SAM2Predictor
+
 from sightsweep.inpainting_module import Inpainting
+from sightsweep.sam_predictor_module import SAM2Predictor
+from sightsweep.ui import ImageClickerApp
 
 
 # --- Load Configuration ---

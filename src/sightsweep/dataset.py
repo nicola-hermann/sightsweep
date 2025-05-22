@@ -1,10 +1,11 @@
-from torch.utils.data import Dataset
 from pathlib import Path
 from typing import Callable
+
 import cv2
 import torch
 import torchvision.transforms.functional as TF
 from PIL import Image, ImageDraw
+from torch.utils.data import Dataset
 from torchvision import transforms
 
 
@@ -58,11 +59,20 @@ class SightSweepDataset(Dataset):
         [_, height, width] = image.shape
         pad_h = max(0, self.max_img_dim - height)
         pad_w = max(0, self.max_img_dim - width)
-        padding = [pad_w // 2, pad_h // 2, pad_w - pad_w // 2, pad_h - pad_h // 2]  # [left, top, right, bottom]
+        padding = [
+            pad_w // 2,
+            pad_h // 2,
+            pad_w - pad_w // 2,
+            pad_h - pad_h // 2,
+        ]  # [left, top, right, bottom]
         return TF.pad(image, padding, fill=1)  # Fill with white (1 for normalized images)
 
     def __len__(self):
-        return len(self.data_paths) if self.max_length is None else min(len(self.data_paths), self.max_length)
+        return (
+            len(self.data_paths)
+            if self.max_length is None
+            else min(len(self.data_paths), self.max_length)
+        )
 
     def __getitem__(self, idx) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Load the image
@@ -99,8 +109,12 @@ if __name__ == "__main__":
     print(f"Mask shape: {mask.shape}")
 
     # Ensure all tensors are floating point and values are between 0 and 1
-    assert blob_img.dtype == torch.float32 and blob_img.min() >= 0 and blob_img.max() <= 1, "blob_img is not valid"
-    assert label.dtype == torch.float32 and label.min() >= 0 and label.max() <= 1, "label is not valid"
+    assert blob_img.dtype == torch.float32 and blob_img.min() >= 0 and blob_img.max() <= 1, (
+        "blob_img is not valid"
+    )
+    assert label.dtype == torch.float32 and label.min() >= 0 and label.max() <= 1, (
+        "label is not valid"
+    )
     assert mask.dtype == torch.float32 and mask.min() >= 0 and mask.max() <= 1, "mask is not valid"
 
     # Convert tensors to NumPy arrays for OpenCV

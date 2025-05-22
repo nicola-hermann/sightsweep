@@ -1,33 +1,37 @@
 import gc
-import torch
-from torch.utils.data import DataLoader
-from lightning import Trainer
-from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
-import torch.optim as optim
-from torchinfo import summary
-from sightsweep.models import ConvAutoencoder, ConvVAE, MATInpaintingLitModule
-from sightsweep.dataset import SightSweepDataset
-from pathlib import Path
-import lightning as L
-import wandb
 import os
+from pathlib import Path
+
+import lightning as L
+import torch
+import torch.optim as optim
+from lightning import Trainer
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.loggers import WandbLogger
+from torch.utils.data import DataLoader
+from torchinfo import summary
+
+import wandb
+from sightsweep.dataset import SightSweepDataset
+from sightsweep.models import ConvAutoencoder, ConvVAE, MATInpaintingLitModule
 
 
 def train(config=None):
     wandb.finish()  # Finish any previous runs to avoid conflicts
     remove_old_checkpoints()
     device = get_device()
-    torch.set_float32_matmul_precision("high")  # Set float32 matmul precision to high for better performance
+    torch.set_float32_matmul_precision(
+        "high"
+    )  # Set float32 matmul precision to high for better performance
     L.seed_everything(42)  # Set random seed for reproducibility
 
-    with wandb.init(config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"):
+    with wandb.init(
+        config=config, entity="cvai-sightsweep", project="sightsweep", job_type="train"
+    ):
         config = wandb.config
         run_name = f"{config['model_name']}_lr_{config['lr']}_weight_decay_{config['weight_decay']}"
         if config.model_name == "mat_inpainting":
-            run_name += (
-                f"_patch_{config.patch_size}_dim_{config.embed_dim}_heads_{config.num_heads}_layers_{config.num_layers}"
-            )
+            run_name += f"_patch_{config.patch_size}_dim_{config.embed_dim}_heads_{config.num_heads}_layers_{config.num_layers}"
         wandb.run.name = run_name
 
         # --- Dataset and DataLoader ---
@@ -49,7 +53,9 @@ def train(config=None):
             save_last=True,
             every_n_epochs=1,
         )
-        early_stopping_callback = EarlyStopping(monitor="val_loss", patience=3, verbose=True, mode="min")
+        early_stopping_callback = EarlyStopping(
+            monitor="val_loss", patience=3, verbose=True, mode="min"
+        )
 
         # --- Trainer ---
         trainer = Trainer(
@@ -97,8 +103,17 @@ def print_batch_size_mem_usage(config, batch_sizes: list, img_size=512):
     """Print the memory usage of the model for different batch sizes."""
     device = get_device()
     model = create_model(config).to(device)
-    summary(model, input_size=[(batch_sizes[-1], 3, img_size, img_size), (batch_sizes[-1], 1, img_size, img_size)], device=device)
-    optimizer = optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
+    summary(
+        model,
+        input_size=[
+            (batch_sizes[-1], 3, img_size, img_size),
+            (batch_sizes[-1], 1, img_size, img_size),
+        ],
+        device=device,
+    )
+    optimizer = optim.AdamW(
+        model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"]
+    )
     model.train()  # Set the model to training mode
     train_dataset = SightSweepDataset(
         data_folder=Path(r"data/train"),
@@ -188,6 +203,14 @@ def create_model(config: dict):
             lr=config["lr"],
             weight_decay=config["weight_decay"],
             img_size=config["img_dim"],
+            latent_dim=config["latent_dim"],
+            num_groups=config["num_groups"],
+            upsample_mode=config["upsample_mode"],
+            kl_weight=config["kl_weight"],
+            kl_anneal_epochs=config.get("kl_anneal_epochs", 0),  # Use .get for optional params
+            kl_anneal_start_epoch=config.get("kl_anneal_start_epoch", 0),
+            kl_anneal_factor=config.get("kl_anneal_factor", 1.0),
+            # input_channels and output_channels can also be in config if they vary
         )
     elif config["model_name"] == "mat_inpainting":
         return MATInpaintingLitModule(
@@ -236,9 +259,19 @@ if __name__ == "__main__":
 
     # Model specific configs
     vae_config = {
-        **base_config,
         "model_name": "vae",
         "lr": 1e-4,
+        "weight_decay": 1e-4,
+        "img_dim": 512,
+        "batch_size": 16,  # Adjust based on new model size and GPU memory
+        # New/Updated Hyperparameters for ConvVAE
+        "latent_dim": 64,  # Experiment with this
+        "num_groups": 32,  # Standard for GroupNorm
+        "upsample_mode": "bilinear",
+        "kl_weight": 1e-5,  # Base KL weight
+        "kl_anneal_epochs": 5,  # Anneal KL weight over 20 epochs
+        "kl_anneal_start_epoch": 2,  # Start annealing after 5 epochs
+        "kl_anneal_factor": 1.0,  # Reach kl_weight * 1.0 at the end
     }
 
     mat_config = {
@@ -254,14 +287,18 @@ if __name__ == "__main__":
     }
     # Ensure embed_dim is divisible by num_heads for MAT
     if mat_config["embed_dim"] % mat_config["num_heads"] != 0:
-        print(f"Adjusting MAT embed_dim or num_heads: {mat_config['embed_dim']}%{mat_config['num_heads']} != 0")
+        print(
+            f"Adjusting MAT embed_dim or num_heads: {mat_config['embed_dim']}%{mat_config['num_heads']} != 0"
+        )
         # Simple adjustment: make embed_dim divisible, could also adjust num_heads
-        mat_config["embed_dim"] = (mat_config["embed_dim"] // mat_config["num_heads"]) * mat_config["num_heads"]
+        mat_config["embed_dim"] = (mat_config["embed_dim"] // mat_config["num_heads"]) * mat_config[
+            "num_heads"
+        ]
         print(f"New embed_dim: {mat_config['embed_dim']}")
 
     # --- SELECT CONFIG TO RUN ---
     # current_config = vae_config
-    current_config = mat_config
+    current_config = vae_config
     # ----------------------------
 
     # To run memory benchmark:

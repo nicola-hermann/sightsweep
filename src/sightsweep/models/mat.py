@@ -1,13 +1,15 @@
+import math
 from pathlib import Path
+
+import lightning as L
+import matplotlib.pyplot as plt  # For displaying patches
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import lightning as L
-import math
 from torch.utils.data import DataLoader
-from sightsweep.dataset import SightSweepDataset
 from torchvision.utils import make_grid  # For logging images
-import matplotlib.pyplot as plt  # For displaying patches
+
+from sightsweep.dataset import SightSweepDataset
 
 # This code is inspired by the Mask-Aware Transformer (MAT) for image inpainting.
 # https://github.com/fenglinglwb/MAT/tree/main
@@ -31,20 +33,38 @@ class MaskedMultiHeadAttention(nn.Module):
         # query, key, value: (batch_size, seq_len, embed_dim)
         # input_patch_mask: (batch_size, seq_len) where 1 is unmasked, 0 is masked.
         batch_size, seq_len, _ = query.shape
-        q = self.q_proj(query).reshape(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        k = self.k_proj(key).reshape(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        v = self.v_proj(value).reshape(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        q = (
+            self.q_proj(query)
+            .reshape(batch_size, seq_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        k = (
+            self.k_proj(key)
+            .reshape(batch_size, seq_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+        )
+        v = (
+            self.v_proj(value)
+            .reshape(batch_size, seq_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+        )
 
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
         if input_patch_mask is not None:
             # input_patch_mask: (B, S)
-            mask_q = input_patch_mask.unsqueeze(1)  # (B, 1, S_key) - which keys can be attended to by any query
-            mask_k = input_patch_mask.unsqueeze(2)  # (B, S_query, 1) - which queries are valid to attend from
+            mask_q = input_patch_mask.unsqueeze(
+                1
+            )  # (B, 1, S_key) - which keys can be attended to by any query
+            mask_k = input_patch_mask.unsqueeze(
+                2
+            )  # (B, S_query, 1) - which queries are valid to attend from
 
             # attn_mask_value[b, i, j] is 1 if query_i AND key_j are unmasked
             attn_mask_value = mask_k * mask_q  # (B, S_query, S_key)
-            attn_mask_value = attn_mask_value.unsqueeze(1).expand_as(scores)  # (B, num_heads, S_query, S_key)
+            attn_mask_value = attn_mask_value.unsqueeze(1).expand_as(
+                scores
+            )  # (B, num_heads, S_query, S_key)
 
             scores = scores.masked_fill(attn_mask_value == 0, float("-inf"))
 
@@ -99,7 +119,9 @@ class MaskAwareTransformerBlock(nn.Module):
 
 
 class SimplePositionalEncoding(nn.Module):
-    def __init__(self, embed_dim, max_len=2048):  # Increased max_len for larger images/smaller patches
+    def __init__(
+        self, embed_dim, max_len=2048
+    ):  # Increased max_len for larger images/smaller patches
         super().__init__()
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, embed_dim, 2) * (-math.log(10000.0) / embed_dim))
@@ -119,7 +141,17 @@ class SimplePositionalEncoding(nn.Module):
 
 
 class MaskAwareImageTransformer(nn.Module):  # This is the core nn.Module
-    def __init__(self, image_size, patch_size, num_channels, num_layers, embed_dim, num_heads, ffn_dim, dropout=0.1):
+    def __init__(
+        self,
+        image_size,
+        patch_size,
+        num_channels,
+        num_layers,
+        embed_dim,
+        num_heads,
+        ffn_dim,
+        dropout=0.1,
+    ):
         super().__init__()
         assert image_size % patch_size == 0, "Image size must be divisible by patch size."
         self.image_size = image_size
@@ -135,7 +167,10 @@ class MaskAwareImageTransformer(nn.Module):  # This is the core nn.Module
         self.dropout_emb = nn.Dropout(dropout)
 
         self.layers = nn.ModuleList(
-            [MaskAwareTransformerBlock(embed_dim, num_heads, ffn_dim, dropout) for _ in range(num_layers)]
+            [
+                MaskAwareTransformerBlock(embed_dim, num_heads, ffn_dim, dropout)
+                for _ in range(num_layers)
+            ]
         )
         self.norm = nn.LayerNorm(embed_dim)
         self.output_projection = nn.Linear(embed_dim, self.patch_dim)
@@ -151,12 +186,19 @@ class MaskAwareImageTransformer(nn.Module):  # This is the core nn.Module
     def patches_to_image(self, x):
         B = x.shape[0]
         num_patches = x.shape[1]
-        images = torch.zeros(B, self.num_channels, self.image_size, self.image_size, device=x.device)
+        images = torch.zeros(
+            B, self.num_channels, self.image_size, self.image_size, device=x.device
+        )
         for b in range(B):
             for i in range(num_patches):
                 row, col = divmod(i, self.num_patches_w)
                 patch = x[b, i].view(self.num_channels, self.patch_size, self.patch_size)
-                images[b, :, row * self.patch_size : (row + 1) * self.patch_size, col * self.patch_size : (col + 1) * self.patch_size] = patch
+                images[
+                    b,
+                    :,
+                    row * self.patch_size : (row + 1) * self.patch_size,
+                    col * self.patch_size : (col + 1) * self.patch_size,
+                ] = patch
         return images
 
     def forward(self, patched_images, patch_level_mask_ones_unmasked):
@@ -231,8 +273,12 @@ class MATInpaintingLitModule(L.LightningModule):
                 # Here, pred_masked_components is x_hat[mask==0] and gt_masked_components is x[mask==0]
                 # F.l1_loss and F.mse_loss with default reduction='mean' will average over all elements.
 
-                loss_l1_val = F.l1_loss(pred_masked_components, gt_masked_components, reduction="mean")
-                loss_l2_val = F.mse_loss(pred_masked_components, gt_masked_components, reduction="mean")
+                loss_l1_val = F.l1_loss(
+                    pred_masked_components, gt_masked_components, reduction="mean"
+                )
+                loss_l2_val = F.mse_loss(
+                    pred_masked_components, gt_masked_components, reduction="mean"
+                )
 
                 loss_l1 = 0.8 * loss_l1_val
                 loss_l2 = 0.2 * loss_l2_val
@@ -263,7 +309,9 @@ class MATInpaintingLitModule(L.LightningModule):
 
         # Using "min pooling" on the mask: if any pixel in the patch is 0 (masked),
         # the patch_mask value becomes 0.
-        unfolded_mask = pixel_mask_ones_unmasked.unfold(2, P, P).unfold(3, P, P)  # (B, 1, NpH, NpW, P, P)
+        unfolded_mask = pixel_mask_ones_unmasked.unfold(2, P, P).unfold(
+            3, P, P
+        )  # (B, 1, NpH, NpW, P, P)
         patch_mask = unfolded_mask.amin(dim=(-1, -2))  # Min over (P,P) -> (B, 1, NpH, NpW)
         patch_mask = patch_mask.view(pixel_mask_ones_unmasked.shape[0], -1)  # (B, NumPatches)
         return patch_mask
@@ -285,12 +333,20 @@ class MATInpaintingLitModule(L.LightningModule):
             fig.suptitle(f"{title} - Batch {b + 1}", fontsize=16)
             for i in range(NumPatches):
                 row, col = divmod(i, num_patches_per_row)
-                patch = patches[b, i].view(self.hparams.num_channels, patch_size, patch_size).permute(1, 2, 0).cpu().numpy()
+                patch = (
+                    patches[b, i]
+                    .view(self.hparams.num_channels, patch_size, patch_size)
+                    .permute(1, 2, 0)
+                    .cpu()
+                    .numpy()
+                )
                 axes[row, col].imshow(patch)
                 axes[row, col].axis("off")
             plt.show()
 
-    def forward(self, input_masked_imgs_pixels, pixel_mask_ones_unmasked, original_gt_imgs_pixels=None):
+    def forward(
+        self, input_masked_imgs_pixels, pixel_mask_ones_unmasked, original_gt_imgs_pixels=None
+    ):
         # input_masked_imgs_pixels: (B, C, H, W) - image with masked areas (e.g., zeroed out)
         # pixel_mask_ones_unmasked: (B, 1, H, W) - 1 where content is original/valid, 0 where it's masked.
         # original_gt_imgs_pixels (Optional): (B,C,H,W) If provided, unmasked parts of output will be from this.
@@ -299,7 +355,9 @@ class MATInpaintingLitModule(L.LightningModule):
 
         # Display the input patches
         # self.display_patches(input_patches, title="Input Patches")
-        patch_level_mask_ones_unmasked = self.image_pixel_mask_to_patch_mask(pixel_mask_ones_unmasked)
+        patch_level_mask_ones_unmasked = self.image_pixel_mask_to_patch_mask(
+            pixel_mask_ones_unmasked
+        )
         print(f"Patch level mask shape: {patch_level_mask_ones_unmasked}")
 
         # Transformer predicts all patches based on the input_patches and attention mask
@@ -349,11 +407,9 @@ class MATInpaintingLitModule(L.LightningModule):
         # We need a mask that is True for patches that were originally masked.
         patch_level_loss_mask_bool = patch_level_attention_mask == 0  # True for masked patches
 
-       # Call the new masked_loss method
+        # Call the new masked_loss method
         total_loss, unweighted_l1, unweighted_l2, num_masked_elements = self.masked_loss(
-            original_gt_patches,
-            predicted_patches,
-            patch_level_loss_mask_bool
+            original_gt_patches, predicted_patches, patch_level_loss_mask_bool
         )
 
         self.log(
@@ -377,16 +433,30 @@ class MATInpaintingLitModule(L.LightningModule):
             with torch.no_grad():
                 # Use the model's forward for consistent visualization if original_gt_imgs is available
                 inpainted_images_for_log = self.forward(
-                    input_masked_imgs[:4], pixel_mask_ones_unmasked[:4], original_gt_imgs_pixels=original_gt_imgs[:4]
+                    input_masked_imgs[:4],
+                    pixel_mask_ones_unmasked[:4],
+                    original_gt_imgs_pixels=original_gt_imgs[:4],
                 )
 
-                grid_original = make_grid(original_gt_imgs[:4].cpu(), nrow=2, normalize=True, value_range=(0, 1))
-                grid_masked_input = make_grid(input_masked_imgs[:4].cpu(), nrow=2, normalize=True, value_range=(0, 1))
-                grid_inpainted = make_grid(inpainted_images_for_log.cpu(), nrow=2, normalize=True, value_range=(0, 1))
+                grid_original = make_grid(
+                    original_gt_imgs[:4].cpu(), nrow=2, normalize=True, value_range=(0, 1)
+                )
+                grid_masked_input = make_grid(
+                    input_masked_imgs[:4].cpu(), nrow=2, normalize=True, value_range=(0, 1)
+                )
+                grid_inpainted = make_grid(
+                    inpainted_images_for_log.cpu(), nrow=2, normalize=True, value_range=(0, 1)
+                )
 
-                self.logger.experiment.log_image(f"{stage}_original_images", grid_original, self.global_step)
-                self.logger.experiment.log_image(f"{stage}_masked_input_images", grid_masked_input, self.global_step)
-                self.logger.experiment.log_image(f"{stage}_inpainted_images", grid_inpainted, self.global_step)
+                self.logger.experiment.log_image(
+                    f"{stage}_original_images", grid_original, self.global_step
+                )
+                self.logger.experiment.log_image(
+                    f"{stage}_masked_input_images", grid_masked_input, self.global_step
+                )
+                self.logger.experiment.log_image(
+                    f"{stage}_inpainted_images", grid_inpainted, self.global_step
+                )
 
         return total_loss
 
@@ -453,7 +523,9 @@ if __name__ == "__main__":
     # Determine device
     if torch.cuda.is_available():
         device = torch.device("cuda")
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():  # Corrected MPS check
+    elif (
+        hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+    ):  # Corrected MPS check
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
@@ -465,10 +537,16 @@ if __name__ == "__main__":
     # 3. Create Dummy Data (one batch)
     B = 1  # Use a small batch size for 512x512 test to manage memory
     train_dataset = SightSweepDataset(
-        data_folder=Path(r"data/train"), augmentation_fn=None, max_img_dim=test_config["image_size"], max_length=3
+        data_folder=Path(r"data/train"),
+        augmentation_fn=None,
+        max_img_dim=test_config["image_size"],
+        max_length=3,
     )
     val_dataset = SightSweepDataset(
-        data_folder=Path(r"data/train"), augmentation_fn=None, max_img_dim=test_config["image_size"], max_length=3
+        data_folder=Path(r"data/train"),
+        augmentation_fn=None,
+        max_img_dim=test_config["image_size"],
+        max_length=3,
     )
     input_masked_imgs, original_gt_imgs, pixel_mask_ones_unmasked = train_dataset[0]
 
@@ -477,7 +555,9 @@ if __name__ == "__main__":
     try:
         with torch.no_grad():  # Ensure no gradients are computed during forward test
             reconstructed_image = model(
-                input_masked_imgs, pixel_mask_ones_unmasked, original_gt_imgs_pixels=original_gt_imgs
+                input_masked_imgs,
+                pixel_mask_ones_unmasked,
+                original_gt_imgs_pixels=original_gt_imgs,
             )
             print(f"LightningModule forward output shape: {reconstructed_image.shape}")
             assert reconstructed_image.shape == original_gt_imgs.shape, "Output shape mismatch"
@@ -504,4 +584,6 @@ if __name__ == "__main__":
         val_dataloaders=DataLoader(val_dataset),
     )
 
-    print(f"\n--- MATInpaintingLitModule Test (Image Size: {test_config['image_size']}) Finished ---")
+    print(
+        f"\n--- MATInpaintingLitModule Test (Image Size: {test_config['image_size']}) Finished ---"
+    )
